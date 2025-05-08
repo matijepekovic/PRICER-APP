@@ -666,13 +666,7 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
-            DialogState.SET_DISCOUNT -> {
-                SetDiscountDialog(
-                    initialDiscountRate = globalDiscountRate,
-                    onDismiss = { viewModel.dismissDialog() },
-                    onConfirm = { viewModel.setGlobalDiscount(it) }
-                )
-            }
+            DialogState.SET_DISCOUNT->{SetDiscountDialog(initialDiscountRate=globalDiscountRate,onDismiss={viewModel.dismissDialog()},onConfirm={viewModel.setGlobalDiscount(it); viewModel.dismissDialog(); viewModel.showQuotePreview()})}
         }
     }
 }

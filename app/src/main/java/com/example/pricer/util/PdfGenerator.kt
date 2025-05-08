@@ -53,7 +53,6 @@ object PdfGenerator {
     internal val linePaint = Paint().apply { color = Color.DKGRAY; strokeWidth = 0.5f }
 
     // Helper result class for item portions
-    data class DrawItemsResult(val count: Int, val finalYPos: Float)
     // Helper data class for pre-calculating item layout
      data class ItemLayoutInfo(
         val spannable: SpannableString,
@@ -180,11 +179,12 @@ object PdfGenerator {
 
     // --- Helper: Draws Totals Section --- (Internal access)
     internal fun drawTotals(canvas: Canvas, quote: Quote, startY: Float): Float {
-        var yPos=startY; val valueX=PAGE_WIDTH-MARGIN; val labelX=valueX-120f;
-        val labelPaint=TextPaint(bodyTextPaint).apply{textAlign=Paint.Align.RIGHT};
-        val boldLabelPaint=TextPaint(bodyBoldTextPaint).apply{textAlign=Paint.Align.RIGHT};
-        val valuePaint=TextPaint(bodyRightAlignPaint);
-        val boldValuePaint=TextPaint(bodyBoldRightAlignPaint);
+        var yPos=startY; val valueX=PAGE_WIDTH-MARGIN
+        val labelX=valueX-120f
+        val labelPaint=TextPaint(bodyTextPaint).apply{textAlign=Paint.Align.RIGHT}
+        val boldLabelPaint=TextPaint(bodyBoldTextPaint).apply{textAlign=Paint.Align.RIGHT}
+        val valuePaint=TextPaint(bodyRightAlignPaint)
+        val boldValuePaint=TextPaint(bodyBoldRightAlignPaint)
         // --- UPDATED DRAW CALLS ---
         // Subtotal (Before Discount)
         canvas.drawText("Subtotal:", labelX, yPos, labelPaint)

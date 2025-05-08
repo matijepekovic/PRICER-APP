@@ -154,7 +154,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // =============================================
     // Prospect/Customer State
     // =============================================
-
+    private val _prospectsSearchQuery = MutableStateFlow("")
+    val prospectsSearchQuery: StateFlow<String> = _prospectsSearchQuery.asStateFlow()
     private val _prospectRecords = MutableStateFlow<List<ProspectRecord>>(emptyList())
     val prospectRecords: StateFlow<List<ProspectRecord>> = _prospectRecords.asStateFlow()
     private val _isLoading = MutableStateFlow(false)
@@ -176,7 +177,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // =============================================
     // Derived State
     // =============================================
+    val filteredProspectRecords: StateFlow<List<ProspectRecord>> = combine(
+        _prospectRecords,
+        prospectsSearchQuery
+    ) { records, query ->
+        if (query.isBlank()) {
+            records
+        } else {
+            val searchTerms = query.lowercase().trim().split(" ")
+            records.filter { record ->
+                searchTerms.all { term ->
+                    record.customerName.lowercase().contains(term) ||
+                            record.customerEmail?.lowercase()?.contains(term) == true ||
+                            record.customerPhone?.contains(term) == true
+                }
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    // Add this function to update the search query
+    fun updateProspectsSearchQuery(query: String) {
+        _prospectsSearchQuery.value = query
+    }
     val sortedProducts: StateFlow<List<Product>> = combine(
         activeCatalog,
         _productSortCriteria,

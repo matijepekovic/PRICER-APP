@@ -25,25 +25,31 @@ import com.example.pricer.viewmodel.MainViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Search
 // Optional: import androidx.compose.ui.platform.LocalLifecycleOwner
 // Optional: import androidx.lifecycle.Lifecycle
+import androidx.compose.material3.OutlinedTextFieldDefaults
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProspectsScreen(
     viewModel: MainViewModel,
     onNavigateBackToCatalog: () -> Unit,
-    onProspectClick: (String) -> Unit // Callback with ProspectRecord ID
+    onProspectClick: (String) -> Unit
 ) {
     // --- Corrected State Collection ---
-    // The StateFlow in ViewModel is initialized with emptyList(), so initialValue here might be redundant
-    // but can help with immediate composition if the flow is slow to emit for the first time.
-    val allProspectRecords by viewModel.prospectRecords
-        .collectAsStateWithLifecycle(initialValue = emptyList<ProspectRecord>()) // Correct parameter name
+    // Use the filtered prospects instead of all prospects
+    val filteredProspects by viewModel.filteredProspectRecords
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+
+    // Get the search query from ViewModel
+    val searchQuery by viewModel.prospectsSearchQuery
+        .collectAsStateWithLifecycle()
 
     // Filter for actual prospects and sort; wrap in remember to avoid re-calculation on every recomposition
-    val prospectList = remember(allProspectRecords) {
-        allProspectRecords
+    val prospectList = remember(filteredProspects) {
+        filteredProspects
             .filter { it.status == ProspectStatus.PROSPECT } // Use imported enum
             .sortedByDescending { it.dateCreated }
     }
@@ -51,41 +57,82 @@ fun ProspectsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Prospects") },
+                title = { Text("Back to Catalog") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBackToCatalog) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to Catalog")
                     }
                 }
-                // TODO: Add actions like filter, sort for prospects later
             )
         }
     ) { paddingValues ->
         Column(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
+            // Search Bar
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { viewModel.updateProspectsSearchQuery(it) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                placeholder = { Text("Search...") },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { viewModel.updateProspectsSearchQuery("") }) {
+                            Icon(Icons.Default.Clear, contentDescription = "Clear search")
+                        }
+                    }
+                },
+                singleLine = true,
+                shape = MaterialTheme.shapes.extraLarge,
+                // Use the correct colors API or remove if it causes problems
+                colors = OutlinedTextFieldDefaults.colors(
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                )
+            )
+
             if (prospectList.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) { // Added padding
+                // Empty state UI (similar to your existing implementation)
+                Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(
-                            imageVector = Icons.Outlined.Inbox, // Example icon
+                            imageVector = Icons.Outlined.Inbox,
                             contentDescription = "No Prospects",
                             modifier = Modifier.size(48.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(Modifier.height(16.dp))
-                        Text("No prospects saved yet.", style = MaterialTheme.typography.titleMedium)
-                        Spacer(Modifier.height(4.dp)) // Added spacer
                         Text(
-                            "Finalize quotes to create prospect records.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center // Added textAlign for better look
+                            if (searchQuery.isNotBlank())
+                                "No prospects matching \"$searchQuery\""
+                            else
+                                "No prospects saved yet.",
+                            style = MaterialTheme.typography.titleMedium
                         )
+
+                        Spacer(Modifier.height(4.dp))
+
+                        if (searchQuery.isBlank()) {
+                            Text(
+                                "Finalize quotes to create prospect records.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+                        } else {
+                            Text(
+                                "Try using different search terms.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+                        }
                     }
                 }
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 16.dp) // Added some bottom padding
+                    contentPadding = PaddingValues(bottom = 16.dp)
                 ) {
                     items(items = prospectList, key = { it.id }) { prospect ->
                         ProspectRow(

@@ -7,7 +7,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.outlined.FolderZip
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -33,13 +34,17 @@ fun CustomersScreen(
     onNavigateBackToCatalog: () -> Unit,
     onCustomerClick: (String) -> Unit
 ) {
-    // Collect all prospect records
-    val allProspectRecords by viewModel.prospectRecords
+    // Use the filtered prospects instead of all prospects
+    val filteredProspects by viewModel.filteredProspectRecords
         .collectAsStateWithLifecycle(initialValue = emptyList())
 
+    // Get the search query from ViewModel
+    val searchQuery by viewModel.prospectsSearchQuery
+        .collectAsStateWithLifecycle()
+
     // Filter for CUSTOMER status only and sort by date
-    val customersList = remember(allProspectRecords) {
-        allProspectRecords
+    val customersList = remember(filteredProspects) {
+        filteredProspects
             .filter { it.status == ProspectStatus.CUSTOMER }
             .sortedByDescending { it.dateUpdated }
     }
@@ -47,17 +52,39 @@ fun CustomersScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Customers") },
+                title = { Text("Back to Catalog") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBackToCatalog) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to Catalog")
                     }
                 }
-                // Add actions here if needed later
             )
         }
     ) { paddingValues ->
         Column(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
+            // Search Bar
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { viewModel.updateProspectsSearchQuery(it) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                placeholder = { Text("Search...") },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { viewModel.updateProspectsSearchQuery("") }) {
+                            Icon(Icons.Default.Clear, contentDescription = "Clear search")
+                        }
+                    }
+                },
+                singleLine = true,
+                shape = MaterialTheme.shapes.extraLarge,
+                colors = OutlinedTextFieldDefaults.colors(
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                )
+            )
+
             if (customersList.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -68,14 +95,29 @@ fun CustomersScreen(
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(Modifier.height(16.dp))
-                        Text("No customers saved yet.", style = MaterialTheme.typography.titleMedium)
-                        Spacer(Modifier.height(4.dp))
                         Text(
-                            "Convert prospects to customers to see them here.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center
+                            if (searchQuery.isNotBlank())
+                                "No customers matching \"$searchQuery\""
+                            else
+                                "No customers saved yet.",
+                            style = MaterialTheme.typography.titleMedium
                         )
+                        Spacer(Modifier.height(4.dp))
+                        if (searchQuery.isBlank()) {
+                            Text(
+                                "Convert prospects to customers to see them here.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+                        } else {
+                            Text(
+                                "Try using different search terms.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+                        }
                     }
                 }
             } else {
