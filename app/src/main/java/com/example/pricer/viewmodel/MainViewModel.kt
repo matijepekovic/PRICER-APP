@@ -31,6 +31,7 @@ import kotlinx.serialization.json.Json
 import com.example.pricer.data.model.*
 import com.example.pricer.ui.dialogs.CustomerInfo
 import com.example.pricer.util.PdfGenerator
+import com.example.pricer.util.ReminderManager
 
 // --- Java Imports ---
 import java.io.File
@@ -156,10 +157,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _prospectRecords = MutableStateFlow<List<ProspectRecord>>(emptyList())
     val prospectRecords: StateFlow<List<ProspectRecord>> = _prospectRecords.asStateFlow()
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private val _loadingMessage = MutableStateFlow<String?>(null)
+    val loadingMessage: StateFlow<String?> = _loadingMessage.asStateFlow()
     private val _selectedProspectRecord = MutableStateFlow<ProspectRecord?>(null)
     val selectedProspectRecord: StateFlow<ProspectRecord?> = _selectedProspectRecord.asStateFlow()
-
     private val _selectedProspectId = MutableStateFlow<String?>(null)
 
     // =============================================
@@ -236,6 +240,59 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // UI Mode Navigation
     // =============================================
 
+    fun showContactsScreen() {
+        _selectedProspectRecord.value = null // Clear selection when viewing list
+        _uiMode.value = UiMode.CONTACTS
+        Log.d(TAG, "Switching to Contacts screen (Prospects/Customers tabs)")
+    }
+    fun catalogNameExists(name: String): Boolean {
+        return _catalogs.value.values.any { it.name.equals(name, ignoreCase = true) }
+    }
+
+    fun importCatalogWithNewName(catalog: Catalog, newName: String) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _loadingMessage.value = "Importing catalog with new name..."
+
+            try {
+                val trimmedName = newName.trim()
+
+                if (trimmedName.isBlank()) {
+                    _snackbarMessage.emit("Import canceled: Name cannot be empty")
+                    return@launch
+                }
+
+                // Check if new name also exists
+                if (catalogNameExists(trimmedName)) {
+                    _snackbarMessage.emit("A catalog with the name '$trimmedName' already exists. Please try another name.")
+                    return@launch
+                }
+
+                // Continue with import using new name
+                val catalogToAdd = catalog.copy(
+                    id = UUID.randomUUID().toString(),
+                    name = trimmedName
+                )
+
+                _catalogs.update { currentCatalogs ->
+                    currentCatalogs + (catalogToAdd.id to catalogToAdd)
+                }
+
+                saveCatalogs()
+                _snackbarMessage.emit("Catalog '$trimmedName' imported successfully!")
+            } finally {
+                _isLoading.value = false
+                _loadingMessage.value = null
+            }
+        }
+    }
+// Then modify the existing showProspectsScreen function:
+
+    fun showProspectsScreen() {
+        _selectedProspectRecord.value = null // Clear selection when viewing list
+        _uiMode.value = UiMode.CONTACTS // Changed from UiMode.PROSPECTS to UiMode.CONTACTS
+        Log.d(TAG, "Switching to Contacts screen (Prospects/Customers tabs)")
+    }
     fun showCatalogView() {
         _uiMode.value = UiMode.CATALOG
     }
@@ -254,11 +311,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun showProspectsScreen() {
-        _selectedProspectRecord.value = null // Clear selection when viewing list
-        _uiMode.value = UiMode.PROSPECTS
-        Log.d(TAG, "Switching to Prospects screen")
-    }
 
     fun showProspectDetail(prospectId: String) {
         val record = _prospectRecords.value.find { it.id == prospectId }
@@ -387,9 +439,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun clearAllQuantitiesAndAssignments() {
-        Log.i(TAG, "Clearing all item quantities and multiplier assignments.")
+        Log.i(TAG, "Clearing all item quantities, multiplier assignments, and customer information.")
         _itemQuantities.value = emptyMap()
         _productMultiplierAssignments.value = emptyMap()
+
+        // Reset customer information and quote
+        _quoteCustomerName.value = ""
+        _quoteCustomerEmail.value = ""
+        _quoteCustomerPhone.value = ""
+        _quoteCompanyName.value = ""
+        _quoteCustomMessage.value = ""
+        _currentQuote.value = null
+
+        // Reset tax and discount rates (optional)
+        _taxRate.value = 0.0
+        _globalDiscountRate.value = 0.0
     }
 
     private fun sortProducts(products: List<Product>, criteria: ProductSortCriteria): List<Product> {
@@ -706,39 +770,68 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
-
-    fun importCatalog(importedCatalog: Catalog?) {
+    fun importRenamedCatalog(catalog: Catalog, newName: String) {
         viewModelScope.launch {
-            if (importedCatalog == null) {
-                Log.e(TAG, "Import failed: Parsed catalog data was null.")
-                _snackbarMessage.emit("Import failed: Invalid file content.")
+            val trimmedName = newName.trim()
+
+            if (trimmedName.isBlank()) {
+                _snackbarMessage.emit("Import canceled: Name cannot be empty")
                 return@launch
             }
 
-            Log.d(TAG, "ViewModel: Processing import for catalog named: '${importedCatalog.name}'")
+            // Check if the new name also exists
+            val nameExists = _catalogs.value.values.any {
+                it.name.equals(trimmedName, ignoreCase = true)
+            }
 
-            var catalogToAdd = importedCatalog.copy(id = UUID.randomUUID().toString())
+            if (nameExists) {
+                //_nameConflictEvent.emit(Pair(catalog, trimmedName))
+                Log.w(TAG, "New catalog name '$trimmedName' also exists. Alerting user again.")
+                return@launch
+            }
+
+            // Proceed with import using new name
+            val catalogToAdd = catalog.copy(
+                id = UUID.randomUUID().toString(),
+                name = trimmedName
+            )
 
             _catalogs.update { currentCatalogs ->
-                val nameExists = currentCatalogs.values.any {
-                    it.name.equals(catalogToAdd.name, ignoreCase = true)
-                }
-
-                if (nameExists) {
-                    val originalName = catalogToAdd.name
-                    val timestamp = SimpleDateFormat("yyMMdd_HHmmss", Locale.getDefault()).format(Date())
-                    catalogToAdd = catalogToAdd.copy(name = "${catalogToAdd.name}_$timestamp")
-                    Log.w(TAG, "Catalog name '$originalName' already exists. Renaming imported catalog to '${catalogToAdd.name}'.")
-                }
-
-                Log.i(TAG, "Adding imported catalog '${catalogToAdd.name}' with new ID: ${catalogToAdd.id}")
+                Log.i(TAG, "Adding renamed imported catalog '$trimmedName' with new ID: ${catalogToAdd.id}")
                 currentCatalogs + (catalogToAdd.id to catalogToAdd)
             }
 
             saveCatalogs()
+            _snackbarMessage.emit("Catalog '$trimmedName' imported successfully!")
+        }
+    }
+    // Update your existing importCatalog method to add loading indicators
+    fun importCatalog(importedCatalog: Catalog?) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _loadingMessage.value = "Importing catalog..."
 
-            _snackbarMessage.emit("Catalog '${catalogToAdd.name}' imported successfully!")
-            Log.i(TAG, "Catalog '${catalogToAdd.name}' (New ID: ${catalogToAdd.id}) import process complete.")
+            try {
+                if (importedCatalog == null) {
+                    Log.e(TAG, "Import failed: Parsed catalog data was null.")
+                    _snackbarMessage.emit("Import failed: Invalid file content.")
+                    return@launch
+                }
+
+                // Create a new catalog with a fresh ID
+                val catalogToAdd = importedCatalog.copy(id = UUID.randomUUID().toString())
+
+                _catalogs.update { currentCatalogs ->
+                    Log.i(TAG, "Adding imported catalog '${catalogToAdd.name}' with new ID: ${catalogToAdd.id}")
+                    currentCatalogs + (catalogToAdd.id to catalogToAdd)
+                }
+
+                saveCatalogs()
+                _snackbarMessage.emit("Catalog '${catalogToAdd.name}' imported successfully!")
+            } finally {
+                _isLoading.value = false
+                _loadingMessage.value = null
+            }
         }
     }
 
@@ -873,9 +966,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     if (noteIndex != -1) {
                         val updatedNotes = record.notes.toMutableList()
 
+                        // Create updated note that preserves the original type
                         updatedNotes[noteIndex] = note.copy(
                             content = newContent.trim(),
                             timestamp = System.currentTimeMillis()
+                            // Note type remains the same as the original
                         )
 
                         val updatedRecord = record.copy(
@@ -884,7 +979,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         )
                         updatedRecordForSelection = updatedRecord
 
-                        Log.i(TAG, "Editing note for ${record.customerName}: '$newContent'")
+                        Log.i(TAG, "Editing ${note.type} note for ${record.customerName}: '$newContent'")
                         currentList.toMutableList().apply { this[recordIndex] = updatedRecord }
                     } else {
                         Log.e(TAG, "Cannot edit note, note not found")
@@ -928,6 +1023,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // =============================================
 
     fun generatePdfToUri(context: Context, quote: Quote?, dirUri: Uri, fileName: String): Uri? {
+        _isLoading.value = true
+        _loadingMessage.value = "Generating PDF..."
         if (quote == null || quote.customerName.isBlank() || fileName.isBlank()) {
             Log.e(TAG, "generatePdfToUri preconditions failed.")
             viewModelScope.launch { _snackbarMessage.emit("PDF: Missing data.") }
@@ -1034,7 +1131,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             pdfDocument.close()
             return null
-        }
+        } finally {
+            // Add this finally block to reset loading state
+            _isLoading.value = false
+            _loadingMessage.value = null}
     }
 
     // =============================================
@@ -1147,6 +1247,142 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Sets or updates a reminder for a prospect
+     */
+    fun setProspectReminder(prospectId: String, reminderDateTime: Long, reminderNote: String?) {
+        viewModelScope.launch {
+            var customerNameForFeedback: String? = null
+            var updatedRecordForSelection: ProspectRecord? = null
+            var previousReminderTime: Long? = null
+
+            _prospectRecords.update { currentList ->
+                val index = currentList.indexOfFirst { it.id == prospectId }
+                if (index != -1) {
+                    val record = currentList[index]
+                    customerNameForFeedback = record.customerName
+                    previousReminderTime = record.reminderDateTime
+
+                    val updatedRecord = record.copy(
+                        reminderDateTime = reminderDateTime,
+                        reminderNote = reminderNote,
+                        dateUpdated = System.currentTimeMillis()
+                    )
+                    updatedRecordForSelection = updatedRecord
+
+                    Log.i(TAG, "Setting reminder for ${record.customerName} at ${Date(reminderDateTime)}")
+                    currentList.toMutableList().apply { this[index] = updatedRecord }
+                } else {
+                    Log.e(TAG, "Cannot set reminder, prospect ID $prospectId not found.")
+                    currentList
+                }
+            }
+
+            if (customerNameForFeedback != null) {
+                saveProspectRecords()
+
+                // Schedule new reminder via AlarmHelper
+                ReminderManager.scheduleReminder(
+                    context = appContext,
+                    prospectId = prospectId,
+                    customerName = customerNameForFeedback!!,
+                    reminderTime = reminderDateTime,
+                    reminderNote = reminderNote
+                )
+
+                // Cancel previous reminder if it was different
+                if (previousReminderTime != null && previousReminderTime != reminderDateTime) {
+                    ReminderManager.cancelReminder(appContext, prospectId)
+                }
+
+                if (_selectedProspectRecord.value?.id == prospectId && updatedRecordForSelection != null) {
+                    _selectedProspectRecord.value = updatedRecordForSelection
+                    Log.d(TAG, "Updated _selectedProspectRecord with new reminder.")
+                }
+
+                val date = SimpleDateFormat("MMM dd, yyyy 'at' h:mm a", Locale.getDefault())
+                    .format(Date(reminderDateTime))
+                _snackbarMessage.emit("Reminder set for $customerNameForFeedback on $date")
+            }
+        }
+    }
+    fun deleteProspectRecord(prospectId: String) {
+        viewModelScope.launch {
+            var prospectName: String? = null
+
+            _prospectRecords.update { currentList ->
+                val index = currentList.indexOfFirst { it.id == prospectId }
+                if (index != -1) {
+                    val prospect = currentList[index]
+                    prospectName = prospect.customerName
+                    Log.i(TAG, "Deleting prospect record for ${prospect.customerName} (ID: $prospectId)")
+
+                    // Remove the record from the list
+                    currentList.toMutableList().apply {
+                        removeAt(index)
+                    }
+                } else {
+                    Log.e(TAG, "Cannot delete prospect, ID $prospectId not found.")
+                    currentList
+                }
+            }
+
+            // Save updated records list
+            saveProspectRecords()
+
+            // Show confirmation message
+            prospectName?.let {
+                _snackbarMessage.emit("Record for $it deleted.")
+            }
+
+            // Go back to prospects list
+            showProspectsScreen()
+        }
+    }
+    /**
+     * Clears a reminder for a prospect
+     */
+    fun clearProspectReminder(prospectId: String) {
+        viewModelScope.launch {
+            var customerNameForFeedback: String? = null
+            var updatedRecordForSelection: ProspectRecord? = null
+
+            _prospectRecords.update { currentList ->
+                val index = currentList.indexOfFirst { it.id == prospectId }
+                if (index != -1) {
+                    val record = currentList[index]
+                    customerNameForFeedback = record.customerName
+
+                    val updatedRecord = record.copy(
+                        reminderDateTime = null,
+                        reminderNote = null,
+                        dateUpdated = System.currentTimeMillis()
+                    )
+                    updatedRecordForSelection = updatedRecord
+
+                    Log.i(TAG, "Clearing reminder for ${record.customerName}")
+                    currentList.toMutableList().apply { this[index] = updatedRecord }
+                } else {
+                    Log.e(TAG, "Cannot clear reminder, prospect ID $prospectId not found.")
+                    currentList
+                }
+            }
+
+            if (customerNameForFeedback != null) {
+                saveProspectRecords()
+
+                // Cancel reminder via AlarmHelper
+                ReminderManager.cancelReminder(appContext, prospectId)
+
+                if (_selectedProspectRecord.value?.id == prospectId && updatedRecordForSelection != null) {
+                    _selectedProspectRecord.value = updatedRecordForSelection
+                    Log.d(TAG, "Updated _selectedProspectRecord after clearing reminder.")
+                }
+
+                _snackbarMessage.emit("Reminder for $customerNameForFeedback has been cleared")
+            }
+        }
+    }
     private fun migrateOldProspectRecords(jsonString: String) {
         viewModelScope.launch(Dispatchers.IO) {
             try {

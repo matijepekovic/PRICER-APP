@@ -120,21 +120,22 @@ object PdfGenerator {
 
             // --- All items are drawn, now handle totals/footer ---
             finalYPosOnLastItemPage = yPos // Store the final Y on the last page items were on
-
-            // Check if totals fit on the current page (last item page)
+// Check if totals fit on the current page
             if (finalYPosOnLastItemPage + FOOTER_AREA_HEIGHT > PAGE_HEIGHT - MARGIN) {
-                // Doesn't fit, finish current item page and start new page for totals
-                pdfDocument.finishPage(currentPage!!) // Finish last item page
+                // Doesn't fit, finish current page and start new page for totals
+                Log.d(TAG,"Not enough space on page $pageNumber, finishing it.")
+                pdfDocument.finishPage(currentPage!!)
                 pageNumber++
-                Log.d(TAG,"Starting page $pageNumber for totals/footer.")
-                currentPage = pdfDocument.startPage(PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, pageNumber).create())
+                Log.d(TAG,"Starting new page $pageNumber for totals/footer.")
+                currentPage = pdfDocument.startPage(PdfDocument.PageInfo.Builder(
+                    PAGE_WIDTH, PAGE_HEIGHT, pageNumber).create())
                 canvas = currentPage.canvas
                 yPos = MARGIN + 20f // Reset Y for totals page
             } else {
-                // Totals fit on current page, continue drawing from finalYPosAfterItems
+                // Totals fit on current page, continue from finalYPosOnLastItemPage
                 canvas = currentPage!!.canvas // Ensure we have the correct canvas reference
-                // yPos remains finalYPosOnLastItemPage
-                Log.d(TAG,"Drawing totals on page $pageNumber")
+                yPos = finalYPosOnLastItemPage
+                Log.d(TAG,"Drawing totals on existing page $pageNumber at y=$yPos")
             }
 
             // Draw Totals and Footer on the determined page
@@ -215,7 +216,6 @@ object PdfGenerator {
 
     // --- Helper: Calculates layout info and total needed row height for an item --- (Private)
     fun calculateItemLayoutInfo(item: QuoteItem): ItemLayoutInfo {
-        // Define column geometry JUST for width calculation
         val qtyColWidth=40f; val unitPriceColWidth=70f; val lineTotalColWidth=75f; val interColSpacing=8f
         val lineTotalColX=PAGE_WIDTH-MARGIN-lineTotalColWidth
         val unitPriceColX=lineTotalColX-interColSpacing-unitPriceColWidth; val qtyColX=unitPriceColX-interColSpacing-qtyColWidth
@@ -225,22 +225,35 @@ object PdfGenerator {
         // Prepare text (using simplified build logic)
         val namePart = item.product.name
         var finalStringToDraw = namePart
+
+        // Add description only ONCE
         if (item.product.description.isNotBlank()) {
-            finalStringToDraw += "\n${item.product.description}" // Append desc if present
+            finalStringToDraw += "\n${item.product.description}"
         }
-        if (item.product.description.isNotBlank()) { finalStringToDraw += "\n${item.product.description}" }
+
+        // Add multipliers if any
         if (item.appliedMultipliers.isNotEmpty()) {
-            val multipliersString = item.appliedMultipliers.joinToString("\n") { m-> val v=when(m.type){MultiplierType.PERCENTAGE->formatPercentage(m.appliedValue); else->"${formatCurrency(m.appliedValue)}/unit"}; "  + ${m.name} ($v)" }
+            val multipliersString = item.appliedMultipliers.joinToString("\n") { m->
+                val v=when(m.type){
+                    MultiplierType.PERCENTAGE->formatPercentage(m.appliedValue)
+                    else->"${formatCurrency(m.appliedValue)}/unit"
+                }
+                "  + ${m.name} ($v)"
+            }
             finalStringToDraw += "\n${multipliersString}"
         }
 
         // Apply bold span
         val spannable = SpannableString(finalStringToDraw)
-        if (namePart.isNotEmpty()) { spannable.setSpan(StyleSpan(Typeface.BOLD), 0, namePart.length, Spannable.SPAN_INCLUSIVE_INCLUSIVE) }
+        if (namePart.isNotEmpty()) {
+            spannable.setSpan(StyleSpan(Typeface.BOLD), 0, namePart.length, Spannable.SPAN_INCLUSIVE_INCLUSIVE)
+        }
 
         // Create StaticLayout to measure height
         bodyTextPaint.textAlign = Paint.Align.LEFT
-        val layout = StaticLayout.Builder.obtain(spannable, 0, spannable.length, bodyTextPaint, itemColWidth.toInt()).setAlignment(Layout.Alignment.ALIGN_NORMAL).build()
+        val layout = StaticLayout.Builder.obtain(spannable, 0, spannable.length, bodyTextPaint, itemColWidth.toInt())
+            .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+            .build()
         val itemTextHeight = layout.height.toFloat()
 
         // Calculate total row height needed (including divider spacing below)
@@ -248,10 +261,14 @@ object PdfGenerator {
         val dividerPadding = 5f; val lineThickness = 1.0f; val belowDividerPadding = 5f
         val totalRowHeightNeeded = rowHeightBase + dividerPadding + lineThickness + belowDividerPadding
 
+        // Add a safety check to prevent unreasonably large heights
+        val maxReasonableHeight = PAGE_HEIGHT / 99f// No item should take more than half a page
+        val safeRowHeight = totalRowHeightNeeded.coerceAtMost(maxReasonableHeight)
+
         // Calculate baseline adjustment relative to row start
         val baselineYAdjust = -bodyTextPaint.ascent() // Baseline relative to top = 0 - ascent
 
-        return ItemLayoutInfo(spannable, layout, itemTextHeight, totalRowHeightNeeded, baselineYAdjust)
+        return ItemLayoutInfo(spannable, layout, itemTextHeight, safeRowHeight, baselineYAdjust)
     }
 
 

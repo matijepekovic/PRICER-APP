@@ -70,6 +70,7 @@ enum class ProductSortCriteria {
 enum class UiMode {
     CATALOG,
     QUOTE_PREVIEW,
+    CONTACTS,
     PROSPECTS,
     PROSPECT_DETAIL
 }
@@ -86,7 +87,8 @@ enum class DialogState {
     QUOTE_DETAILS,
     SET_DISCOUNT,
     ADD_NOTE,
-    EDIT_NOTE
+    EDIT_NOTE,
+    SET_REMINDER
 }
 @Serializable
 enum class ProspectStatus { PROSPECT, CUSTOMER }

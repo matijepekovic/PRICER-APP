@@ -39,7 +39,11 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
-
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.filled.Warning
 /**
  * Screen for viewing and managing details of a single prospect/customer.
  * Displays contact info, notes, and provides actions like sharing PDFs and changing status.
@@ -55,6 +59,7 @@ fun ProspectDetailScreen(
     val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy 'at' HH:mm", Locale.getDefault()) }
     val fileProviderAuthority = "${context.packageName}.fileprovider"
 
+    var showDeleteConfirmation by remember { mutableStateOf(false) }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -139,7 +144,32 @@ fun ProspectDetailScreen(
                         launchSmsIntent(context, phone, viewModel, prospect.id)
                     }
                 }
-
+                if (showDeleteConfirmation) {
+                    AlertDialog(
+                        onDismissRequest = { showDeleteConfirmation = false },
+                        icon = { Icon(Icons.Default.Warning, contentDescription = null) },
+                        title = { Text("Confirm Deletion") },
+                        text = { Text("Are you sure you want to delete the record for ${selectedProspect?.customerName}? This action cannot be undone.") },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    selectedProspect?.id?.let { prospectId ->
+                                        viewModel.deleteProspectRecord(prospectId)
+                                    }
+                                    showDeleteConfirmation = false
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                            ) {
+                                Text("Delete", color = MaterialTheme.colorScheme.onError)
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showDeleteConfirmation = false }) {
+                                Text("Cancel")
+                            }
+                        }
+                    )
+                }
                 DetailRow(
                     label = "Status:",
                     value = prospect.status.name.lowercase().replaceFirstChar { it.titlecase() }
@@ -151,7 +181,26 @@ fun ProspectDetailScreen(
 
                 // --- Associated Quote Section ---
                 SectionTitle("Associated Quote")
-                // TODO: Add quote summary details here
+                if (prospect.externalPdfUriString.isNullOrBlank()) {
+                    // If no PDF exists
+                    Text(
+                        "No PDF quote available",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    // If PDF exists, show a button to open it
+                    OutlinedButton(
+                        onClick = {
+                            openPdf(context, prospect.externalPdfUriString, fileProviderAuthority, prospect.customerName)
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.PictureAsPdf, null, Modifier.size(ButtonDefaults.IconSize))
+                        Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                        Text("View Quote PDF")
+                    }
+                }
 
                 ListSpacer()
 
@@ -169,10 +218,8 @@ fun ProspectDetailScreen(
                             NoteItem(
                                 note = note,
                                 onEditClick = {
-                                    // Only allow editing manual notes (not system-generated ones)
-                                    if (note.type == NoteType.MANUAL) {
-                                        viewModel.showDialog(DialogState.EDIT_NOTE, note)
-                                    }
+                                    // Allow editing ALL note types
+                                    viewModel.showDialog(DialogState.EDIT_NOTE, note)
                                 }
                             )
                             Divider(modifier = Modifier.padding(vertical = 4.dp))
@@ -191,20 +238,70 @@ fun ProspectDetailScreen(
 
                 ListSpacer()
 
-                // --- Reminder Section ---
+
+// --- Reminder Section ---
                 SectionTitle("Reminder")
 
-                OutlinedButton(
-                    onClick = { /* TODO: Show Set/Edit Reminder Dialog */ },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Default.Alarm, null, Modifier.size(ButtonDefaults.IconSize))
-                    Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                    Text("Set Reminder")
+                val prospect = selectedProspect!!
+                val hasReminder = prospect.reminderDateTime != null
+                val reminderDate = prospect.reminderDateTime?.let {
+                    SimpleDateFormat("EEE, MMM d, yyyy 'at' h:mm a", Locale.getDefault())
+                        .format(Date(it))
                 }
 
-                ListSpacer()
-
+// Display existing reminder if there is one
+                if (hasReminder) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Alarm,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Reminder set for:",
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                            Text(
+                                text = reminderDate ?: "",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            prospect.reminderNote?.takeIf { it.isNotBlank() }?.let { note ->
+                                Text(
+                                    text = note,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+// Add after your "Set/Edit Reminder" button
+// Button to set/edit reminder
+                OutlinedButton(
+                    onClick = {
+                        viewModel.showDialog(
+                            DialogState.SET_REMINDER,
+                            prospect // Pass the whole prospect record as data
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = if (hasReminder) Icons.Default.Edit else Icons.Default.Alarm,
+                        contentDescription = null,
+                        modifier = Modifier.size(ButtonDefaults.IconSize)
+                    )
+                    Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                    Text(if (hasReminder) "Edit Reminder" else "Set Reminder")
+                }
                 // --- Actions Section ---
                 SectionTitle("Actions")
 
@@ -224,10 +321,11 @@ fun ProspectDetailScreen(
 
                     // Delete Button
                     Button(
-                        onClick = { /* TODO: Show confirmation then delete */ },
+                        onClick = { showDeleteConfirmation = true },
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                     ) {
                         Text("Delete Record")
+
                     }
                 }
             }
@@ -243,7 +341,7 @@ private fun NoteItem(
     note: Note,
     onEditClick: () -> Unit
 ) {
-    val isSystemNote = note.type != NoteType.MANUAL
+
     val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault()) }
     val formattedDate = remember(note.timestamp) { dateFormat.format(Date(note.timestamp)) }
 
@@ -264,18 +362,16 @@ private fun NoteItem(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            // Edit button for manual notes
-            if (!isSystemNote) {
-                IconButton(
-                    onClick = onEditClick,
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Edit,
-                        contentDescription = "Edit Note",
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
+            // Edit button for ALL notes (removed type condition)
+            IconButton(
+                onClick = onEditClick,
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Edit,
+                    contentDescription = "Edit Note",
+                    modifier = Modifier.size(16.dp)
+                )
             }
         }
 
@@ -553,5 +649,34 @@ private fun sharePdf(context: Context, authority: String, pdfUriString: String?,
         Log.e("ProspectDetailScreen", "Error sharing PDF: $pdfUriString", e)
         Toast.makeText(context, "Could not share PDF: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
         tempFile?.delete()
+    }
+}
+private fun openPdf(context: Context, pdfUriString: String?, authority: String, customerName: String?) {
+    if (pdfUriString.isNullOrBlank()) {
+        Toast.makeText(context, "No PDF available to open", Toast.LENGTH_SHORT).show()
+        return
+    }
+
+    try {
+        val originalUri = Uri.parse(pdfUriString)
+        val tempFile = copyUriToTempCacheFile(
+            context,
+            originalUri,
+            "view_${UUID.randomUUID()}",
+            customerName ?: "quote"
+        ) ?: throw IOException("Failed to prepare temporary file for viewing.")
+
+        val viewableUri = FileProvider.getUriForFile(context, authority, tempFile)
+
+        val viewIntent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(viewableUri, "application/pdf")
+            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+
+        context.startActivity(Intent.createChooser(viewIntent, "Open PDF with..."))
+    } catch (e: Exception) {
+        Log.e("ProspectDetailScreen", "Error opening PDF: $pdfUriString", e)
+        Toast.makeText(context, "Could not open PDF: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
     }
 }

@@ -87,9 +87,9 @@ fun CatalogScreen(
                     IconButton(onClick =
                         {
                             viewModel.clearAllQuantitiesAndAssignments(); coroutineScope.launch { Toast.makeText(context,
-                        "Quantities Cleared", Toast.LENGTH_SHORT).show() } })
+                        "Quantities and Customer Info Cleared", Toast.LENGTH_SHORT).show() } })
                     {
-                        Icon(Icons.Default.RestartAlt, "Clear Quantities") };
+                        Icon(Icons.Default.RestartAlt, "Clear All") };
                     IconButton(onClick =
                         { focusManager.clearFocus(); viewModel.showDialog(DialogState.MANAGE_CATALOGS)}) {
                         Icon(Icons.Default.FolderCopy, "Manage Catalogs")};
