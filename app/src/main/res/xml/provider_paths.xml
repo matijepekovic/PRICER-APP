@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- For sharing original catalogs saved to cache -->
+    <cache-path
+        name="shared_catalogs"
+        path="shared_catalogs/" />
+
+    <!-- For viewing/sharing PDF quotes copied to cache -->
+    <cache-path
+        name="pdf_view_cache"
+        path="view_cache/" />
+</paths>
