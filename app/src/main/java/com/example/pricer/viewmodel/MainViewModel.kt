@@ -171,6 +171,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Notes State
     // =============================================
 
+    private val _importConfirmEvent = MutableSharedFlow<Catalog>()
+    val importConfirmEvent: SharedFlow<Catalog> = _importConfirmEvent.asSharedFlow()
+
+    private val _nameConflictEvent = MutableSharedFlow<Pair<Catalog, String>>()
+    val nameConflictEvent: SharedFlow<Pair<Catalog, String>> = _nameConflictEvent.asSharedFlow()
     private val _noteToEdit = MutableStateFlow<Note?>(null)
     val noteToEdit: StateFlow<Note?> = _noteToEdit.asStateFlow()
 
@@ -194,7 +199,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    // Add this near your other SharedFlow declarations
 
+    // Then add this method to trigger the event
     // Add this function to update the search query
     fun updateProspectsSearchQuery(query: String) {
         _prospectsSearchQuery.value = query
@@ -827,7 +834,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _snackbarMessage.emit("Catalog '$trimmedName' imported successfully!")
         }
     }
-    // Update your existing importCatalog method to add loading indicators
     fun importCatalog(importedCatalog: Catalog?) {
         viewModelScope.launch {
             _isLoading.value = true
@@ -1025,7 +1031,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
-
     fun logInteraction(prospectId: String, interactionType: String) {
         val noteType = when (interactionType) {
             "Called" -> NoteType.CALL

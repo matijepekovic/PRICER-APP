@@ -1,6 +1,7 @@
 package com.example.pricer
 
 // Standard Android/Activity Imports
+import kotlinx.serialization.decodeFromString
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -10,7 +11,15 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-
+import androidx.compose.material.icons.filled.FileDownload
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.flow.collect
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import androidx.activity.result.ActivityResultLauncher
+import kotlinx.coroutines.launch
 // Compose UI imports
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -36,6 +45,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import kotlinx.serialization.decodeFromString
+import com.example.pricer.data.model.Catalog
 
 // Lifecycle imports
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -70,6 +81,7 @@ import com.example.pricer.ui.screens.ProspectsTabsContainer
 
 class MainActivity : ComponentActivity() {
     // Keep state at class level
+
     private var catalogToConfirmImport by mutableStateOf<Catalog?>(null)
     private var catalogNameConflict by mutableStateOf<Pair<Catalog, String>?>(null)
     private var isLoading by mutableStateOf(false)
@@ -100,11 +112,94 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: MainViewModel by viewModels()
     private val instanceId = UUID.randomUUID().toString().substring(0, 5)
-
+    private lateinit var notificationPermissionLauncher: androidx.activity.result.ActivityResultLauncher<String>
+    private lateinit var catalogImportLauncher: ActivityResultLauncher<Array<String>>
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Log.i("PricerAppLifecycle", "MainActivity ($instanceId) onCreate. ViewModel hash: ${viewModel.hashCode()}. Intent: $intent, Action: ${intent?.action}, Data: ${intent?.data}, Flags: ${intent?.flags}")
+// Initialize catalog import launcher
+        catalogImportLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri != null) {
+                Log.d("MainActivity", "Selected file URI: $uri")
 
+                // Take persistable permissions
+                try {
+                    val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    contentResolver.takePersistableUriPermission(uri, takeFlags)
+                    Log.d("MainActivity", "Took persistent permissions for URI")
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "Failed to take permissions", e)
+                    // Continue anyway - might still work
+                }
+
+                // Show loading state
+                isLoading = true
+                loadingMessage = "Reading catalog file..."
+
+                // Process the file in a background thread
+                lifecycleScope.launch(Dispatchers.IO) {
+                    try {
+                        // Read file content
+                        val jsonString = contentResolver.openInputStream(uri)?.use { inputStream ->
+                            inputStream.bufferedReader().readText()
+                        } ?: throw IOException("Unable to read file content")
+
+                        if (jsonString.isBlank()) {
+                            withContext(Dispatchers.Main) {
+                                isLoading = false
+                                loadingMessage = null
+                                Toast.makeText(this@MainActivity, "File is empty", Toast.LENGTH_SHORT).show()
+                            }
+                            return@launch
+                        }
+
+                        // Parse catalog
+                        val catalog = try {
+                            Json { ignoreUnknownKeys = true }.decodeFromString<Catalog>(jsonString)
+                        } catch (e: Exception) {
+                            Log.e("MainActivity", "JSON parsing failed", e)
+                            withContext(Dispatchers.Main) {
+                                isLoading = false
+                                loadingMessage = null
+                                Toast.makeText(this@MainActivity, "Invalid catalog format", Toast.LENGTH_LONG).show()
+                            }
+                            return@launch
+                        }
+
+                        // Validate catalog
+                        if (catalog.name.isBlank()) {
+                            withContext(Dispatchers.Main) {
+                                isLoading = false
+                                loadingMessage = null
+                                Toast.makeText(this@MainActivity, "Invalid catalog: missing name", Toast.LENGTH_LONG).show()
+                            }
+                            return@launch
+                        }
+
+                        // Show confirmation UI on main thread
+                        withContext(Dispatchers.Main) {
+                            isLoading = false
+                            loadingMessage = null
+
+                            // Check for name conflict
+                            val nameExists = viewModel.catalogNameExists(catalog.name)
+                            if (nameExists) {
+                                catalogNameConflict = Pair(catalog, catalog.name)
+                            } else {
+                                catalogToConfirmImport = catalog
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "Error processing catalog file", e)
+                        withContext(Dispatchers.Main) {
+                            isLoading = false
+                            loadingMessage = null
+                            Toast.makeText(this@MainActivity, "Error importing catalog: ${e.message}", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            }
+        }
+        Log.i("PricerAppLifecycle", "MainActivity ($instanceId) onCreate. ViewModel hash: ${viewModel.hashCode()}. Intent: $intent, Action: ${intent?.action}, Data: ${intent?.data}, Flags: ${intent?.flags}")
         // Request notification permissions for Android 13+
         checkNotificationPermission()
 
@@ -180,7 +275,6 @@ class MainActivity : ComponentActivity() {
                 )
 
                 fun launchPdfGeneration() { requestDirectoryLauncher.launch(null) }
-
                 // Share Event Collector
                 LaunchedEffect(Unit) {
                     viewModel.shareCatalogEvent.collect { shareableUri ->
@@ -381,17 +475,25 @@ class MainActivity : ComponentActivity() {
 
     private fun checkNotificationPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // Register permission launcher
+            val requestPermissionLauncher = registerForActivityResult(
+                ActivityResultContracts.RequestPermission()
+            ) { isGranted ->
+                if (isGranted) {
+                    Log.d("MainActivity", "Notification permission granted")
+                } else {
+                    Log.d("MainActivity", "Notification permission denied")
+                }
+            }
+
+            // Check if permission is already granted
             if (ContextCompat.checkSelfPermission(
                     this,
-                    android.Manifest.permission.POST_NOTIFICATIONS
+                    Manifest.permission.POST_NOTIFICATIONS
                 ) != PackageManager.PERMISSION_GRANTED
             ) {
-                // Request permission
-                ActivityCompat.requestPermissions(
-                    this,
-                    arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
-                    REQUEST_NOTIFICATION_PERMISSION
-                )
+                // Launch permission request
+                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
     }
@@ -669,4 +771,175 @@ class MainActivity : ComponentActivity() {
             DialogState.SET_DISCOUNT->{SetDiscountDialog(initialDiscountRate=globalDiscountRate,onDismiss={viewModel.dismissDialog()},onConfirm={viewModel.setGlobalDiscount(it); viewModel.dismissDialog(); viewModel.showQuotePreview()})}
         }
     }
+    // Add these methods INSIDE your MainActivity class, before the final }
+
+    fun openCatalogImport() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE), 456)
+                Toast.makeText(this, "Please grant storage permission to import catalogs", Toast.LENGTH_LONG).show()
+                return
+            }
+        }
+
+        try {
+            catalogImportLauncher.launch(arrayOf("application/json", "text/plain"))
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error launching file picker", e)
+            Toast.makeText(this, "Cannot open file picker: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf(
+                "application/json",
+                "text/plain"
+            ))
+
+            // Make it easier to navigate
+            putExtra(Intent.EXTRA_TITLE, "Select Catalog File")
+            putExtra(Intent.EXTRA_LOCAL_ONLY, true)
+
+            // Add flags to help with permissions
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+
+        try {
+            Log.d("MainActivity", "Opening file picker...")
+            startActivityForResult(intent, 123)
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error opening file picker", e)
+            Toast.makeText(this, "Cannot open file picker: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+
+        Log.d("MainActivity", "onActivityResult - requestCode: $requestCode, resultCode: $resultCode")
+
+        if (requestCode == 123) {
+            if (resultCode == RESULT_OK) {
+                val uri = data?.data
+                if (uri != null) {
+                    Log.d("MainActivity", "Selected file URI: $uri")
+                    Toast.makeText(this, "File selected, processing...", Toast.LENGTH_SHORT).show()
+
+                    // Start on a background thread to avoid blocking UI
+                    Thread {
+                        try {
+                            // Take persistable permissions
+                            try {
+                                val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                contentResolver.takePersistableUriPermission(uri, takeFlags)
+                                Log.d("MainActivity", "Took persistent permissions for URI")
+                            } catch (e: Exception) {
+                                Log.e("MainActivity", "Failed to take permissions", e)
+                                // Continue anyway - might still work
+                            }
+
+                            // Start loading state
+                            runOnUiThread {
+                                isLoading = true
+                                loadingMessage = "Reading catalog file..."
+                            }
+
+                            // Read the file content
+                            Log.d("MainActivity", "Attempting to read file content")
+                            var jsonString: String? = null
+                            try {
+                                jsonString = contentResolver.openInputStream(uri)?.use { inputStream ->
+                                    val bytes = inputStream.readBytes()
+                                    Log.d("MainActivity", "Read ${bytes.size} bytes from file")
+                                    String(bytes)
+                                }
+                            } catch (e: Exception) {
+                                Log.e("MainActivity", "Error reading file content", e)
+                                runOnUiThread {
+                                    isLoading = false
+                                    loadingMessage = null
+                                    Toast.makeText(this, "Error reading file: ${e.message}", Toast.LENGTH_LONG).show()
+                                }
+                                return@Thread
+                            }
+
+                            if (jsonString.isNullOrBlank()) {
+                                Log.e("MainActivity", "File content is null or empty")
+                                runOnUiThread {
+                                    isLoading = false
+                                    loadingMessage = null
+                                    Toast.makeText(this, "File is empty", Toast.LENGTH_SHORT).show()
+                                }
+                                return@Thread
+                            }
+
+                            Log.d("MainActivity", "File content preview: ${jsonString.take(100)}...")
+
+                            // Try to parse the JSON
+                            val catalog: Catalog
+                            try {
+                                val json = Json { ignoreUnknownKeys = true }
+                                catalog = json.decodeFromString(jsonString)
+                                Log.d("MainActivity", "Successfully parsed catalog: ${catalog.name} with ${catalog.products.size} products")
+                            } catch (e: Exception) {
+                                Log.e("MainActivity", "JSON parsing failed", e)
+                                runOnUiThread {
+                                    isLoading = false
+                                    loadingMessage = null
+                                    Toast.makeText(this, "Invalid catalog format: ${e.message}", Toast.LENGTH_LONG).show()
+                                }
+                                return@Thread
+                            }
+
+                            // Verify catalog looks valid
+                            if (catalog.name.isBlank()) {
+                                Log.e("MainActivity", "Catalog name is blank")
+                                runOnUiThread {
+                                    isLoading = false
+                                    loadingMessage = null
+                                    Toast.makeText(this, "Invalid catalog: missing name", Toast.LENGTH_LONG).show()
+                                }
+                                return@Thread
+                            }
+
+                            // Finish on UI thread
+                            runOnUiThread {
+                                isLoading = false
+                                loadingMessage = null
+
+                                // Check for name conflicts
+                                val nameExists = viewModel.catalogNameExists(catalog.name)
+                                Log.d("MainActivity", "Name conflict check: ${catalog.name} exists = $nameExists")
+
+                                if (nameExists) {
+                                    // Show name conflict dialog
+                                    catalogNameConflict = Pair(catalog, catalog.name)
+                                    Log.d("MainActivity", "Showing name conflict dialog")
+                                } else {
+                                    // Show confirmation dialog
+                                    catalogToConfirmImport = catalog
+                                    Log.d("MainActivity", "Showing confirmation dialog")
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.e("MainActivity", "Unexpected error during import", e)
+                            runOnUiThread {
+                                isLoading = false
+                                loadingMessage = null
+                                Toast.makeText(this, "Import failed: ${e.message}", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }.start()
+                } else {
+                    Log.e("MainActivity", "Selected file URI is null")
+                    Toast.makeText(this, "No file selected", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                Log.d("MainActivity", "File selection cancelled or failed. Result code: $resultCode")
+            }
+        }
+    }
+
 }

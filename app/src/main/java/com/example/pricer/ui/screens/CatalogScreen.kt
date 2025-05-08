@@ -31,6 +31,8 @@ import com.example.pricer.viewmodel.MainViewModel
 import kotlinx.coroutines.launch
 import android.util.Log
 import android.widget.Toast // Ensure Toast is imported
+import androidx.compose.material.icons.filled.FileUpload
+import com.example.pricer.MainActivity
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -70,7 +72,13 @@ fun CatalogScreen(
                     Text(currentCatalog?.name ?: "Catalog") },
                 modifier = Modifier.padding(start = 28.dp),
                 actions = {
+                    IconButton(onClick = {
+                        (context as MainActivity).openCatalogImport()
+                    }) {
+                        Icon(Icons.Default.FileUpload, contentDescription = "Import Catalog")
+                    }
                     Box {
+
                         IconButton(onClick = { showSortMenu = true
                         }
                         )
