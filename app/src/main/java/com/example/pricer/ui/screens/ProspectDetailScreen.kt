@@ -60,17 +60,291 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.platform.LocalContext
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
-
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.runtime.LaunchedEffect
+import com.example.pricer.data.model.Phase
+import com.example.pricer.data.model.PhaseStatus
 /**
  * Screen for viewing and managing details of a single prospect/customer.
  * Displays contact info, notes, and provides actions like sharing PDFs and changing status.
  */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun PhasesPager(
+    prospect: ProspectRecord,
+    globalPhases: List<Phase>,
+    onPhaseSelect: (Int) -> Unit,
+    selectedPhaseIndex: Int,
+    modifier: Modifier = Modifier
+) {
+    val pagerState = rememberPagerState(initialPage = selectedPhaseIndex, pageCount = { globalPhases.size })
+
+    // Keep selected index in sync with pager
+    LaunchedEffect(pagerState.currentPage) {
+        onPhaseSelect(pagerState.currentPage)
+    }
+
+    Column(modifier = modifier) {
+        // Phase tabs
+        ScrollableTabRow(
+            selectedTabIndex = pagerState.currentPage,
+            edgePadding = 8.dp
+        ) {
+            globalPhases.forEachIndexed { index, phase ->
+                Tab(
+                    selected = pagerState.currentPage == index,
+                    onClick = {
+                        onPhaseSelect(index)
+                    },
+                    text = {
+                        Text(phase.name)
+                    }
+                )
+            }
+        }
+
+        // Phase content pager
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxWidth()
+        ) { page ->
+            val currentPhase = globalPhases.getOrNull(page)
+            if (currentPhase != null) {
+                PhaseContent(
+                    prospect = prospect,
+                    phase = currentPhase,
+                    subcontractors = subcontractors
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun PhaseContent(
+    prospect: ProspectRecord,
+    phase: Phase,
+    subcontractors: List<Subcontractor>
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+    ) {
+        // Phase details header
+        Card(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp)
+            ) {
+                Text(
+                    text = phase.name,
+                    style = MaterialTheme.typography.titleLarge
+                )
+
+                if (phase.description.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = phase.description,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Status: ",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+
+                    Chip(
+                        onClick = { /* Toggle status */ },
+                        colors = ChipDefaults.chipColors(
+                            containerColor = when (phase.status) {
+                                PhaseStatus.NOT_STARTED -> MaterialTheme.colorScheme.errorContainer
+                                PhaseStatus.IN_PROGRESS -> MaterialTheme.colorScheme.primaryContainer
+                                PhaseStatus.COMPLETED -> MaterialTheme.colorScheme.tertiaryContainer
+                            }
+                        )
+                    ) {
+                        Text(
+                            text = when (phase.status) {
+                                PhaseStatus.NOT_STARTED -> "Not Started"
+                                PhaseStatus.IN_PROGRESS -> "In Progress"
+                                PhaseStatus.COMPLETED -> "Completed"
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Phase images section
+        SectionTitle("Phase Images")
+
+        val phaseImages = prospect.phaseImages.find { it.phaseId == phase.id }?.imageUris ?: emptyList()
+
+        if (phaseImages.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(100.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "No images for this phase",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(horizontal = 4.dp)
+            ) {
+                items(phaseImages) { (uri, timestamp) ->
+                    ProjectImageItem(
+                        imageUri = uri,
+                        timestamp = timestamp,
+                        onRemoveClick = { viewModel.removePhaseImage(prospect.id, phase.id, uri) }
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Button(
+            onClick = { viewModel.requestPhaseImageUpload(prospect.id, phase.id) }
+        ) {
+            Icon(
+                imageVector = Icons.Default.PhotoLibrary,
+                contentDescription = null,
+                modifier = Modifier.size(ButtonDefaults.IconSize)
+            )
+            Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+            Text("Add Phase Image")
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Assigned subcontractors for this phase
+        SectionTitle("Assigned Subcontractors")
+
+        val phaseAssignments = prospect.subcontractorAssignments.filter {
+            it.phaseId == phase.id || it.phaseId == null // Show specific phase assignments + global assignments
+        }
+
+        if (phaseAssignments.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(80.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "No subcontractors assigned to this phase",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                phaseAssignments.forEach { assignment ->
+                    val subcontractor = subcontractors.find { it.id == assignment.subcontractorId }
+                    if (subcontractor != null) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp)
+                            ) {
+                                Text(
+                                    text = subcontractor.name,
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+
+                                if (subcontractor.specialty.isNotBlank()) {
+                                    Text(
+                                        text = "Specialty: ${subcontractor.specialty}",
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
+
+                                Text(
+                                    text = if (assignment.phaseId == null)
+                                        "Assigned to all phases"
+                                    else
+                                        "Assigned to this phase",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                ) {
+                                    if (subcontractor.phone.isNotBlank()) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = Icons.Default.Phone,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(16.dp),
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = subcontractor.phone,
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                        }
+                                    }
+
+                                    if (subcontractor.email.isNotBlank()) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = Icons.Default.Email,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(16.dp),
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = subcontractor.email,
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProspectDetailScreen(
     viewModel: MainViewModel,
     onNavigateBack: () -> Unit
 ) {
+    val globalPhases by viewModel.globalPhases.collectAsStateWithLifecycle()
+    val selectedPhaseIndex by viewModel.selectedPhaseIndex.collectAsStateWithLifecycle()
+    val subcontractors by viewModel.subcontractors.collectAsStateWithLifecycle()
     val selectedProspect by viewModel.selectedProspectRecord.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy 'at' HH:mm", Locale.getDefault()) }
@@ -92,6 +366,9 @@ fun ProspectDetailScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { viewModel.showSubcontractorsScreen() }) {
+                        Icon(Icons.Default.Person, contentDescription = "Manage Subcontractors")
+                    }
                     selectedProspect?.let { prospect ->
                         if (!prospect.externalPdfUriString.isNullOrBlank()) {
                             IconButton(onClick = {

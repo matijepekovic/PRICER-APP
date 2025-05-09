@@ -48,7 +48,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.serialization.decodeFromString
 import com.example.pricer.data.model.Catalog
-
+import com.example.pricer.ui.screens.SubcontractorsScreen
+import com.example.pricer.ui.dialogs.ManagePhasesDialog
+import com.example.pricer.ui.dialogs.AssignSubcontractorDialog
 
 // Lifecycle imports
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -833,6 +835,10 @@ class MainActivity : ComponentActivity() {
                     viewModel = viewModel,
                     onNavigateBack = { viewModel.showContactsScreen() }
                 )
+                UiMode.SUBCONTRACTORS -> SubcontractorsScreen( // Add this case
+                    viewModel = viewModel,
+                    onNavigateBack = { viewModel.showCatalogView() }
+                )
             }
         }
     }
@@ -859,6 +865,35 @@ class MainActivity : ComponentActivity() {
 
         when(dialogState) {
             DialogState.NONE -> {}
+
+            DialogState.MANAGE_PHASES -> {
+                val phases by viewModel.globalPhases.collectAsStateWithLifecycle()
+
+                ManagePhasesDialog(
+                    phases = phases,
+                    onDismiss = { viewModel.dismissDialog() },
+                    onSave = { viewModel.saveGlobalPhases(it) }
+                )
+            }
+
+            DialogState.ASSIGN_SUBCONTRACTOR -> {
+                val prospect = selectedProspect // Use the variable that's already defined properly
+                val subcontractors by viewModel.subcontractors.collectAsStateWithLifecycle()
+                val phases by viewModel.globalPhases.collectAsStateWithLifecycle()
+
+                if (prospect != null) { // Use safe null check instead of smart cast
+                    AssignSubcontractorDialog(
+                        subcontractors = subcontractors,
+                        phases = phases,
+                        currentAssignments = prospect.subcontractorAssignments,
+                        onDismiss = { viewModel.dismissDialog() },
+                        onSave = {
+                            viewModel.updateSubcontractorAssignments(prospect.id, it)
+                            viewModel.dismissDialog()
+                        }
+                    )
+                }
+            }
 
             DialogState.ADD_EDIT_PRODUCT -> {
                 AddEditProductDialog(

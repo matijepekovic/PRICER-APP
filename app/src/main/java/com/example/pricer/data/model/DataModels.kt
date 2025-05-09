@@ -72,7 +72,8 @@ enum class UiMode {
     QUOTE_PREVIEW,
     CONTACTS,
     PROSPECTS,
-    PROSPECT_DETAIL
+    PROSPECT_DETAIL,
+    SUBCONTRACTORS
 }
 
 // Enum to manage which dialog is currently open (if any)
@@ -90,7 +91,9 @@ enum class DialogState {
     EDIT_NOTE,
     SET_REMINDER,
     ADD_CUSTOM_ITEM,
-    ADD_VOUCHER
+    ADD_VOUCHER,
+    MANAGE_PHASES,       // Add this new state
+    ASSIGN_SUBCONTRACTOR
 }
 @Serializable
 enum class ProspectStatus { PROSPECT, CUSTOMER }
@@ -115,6 +118,71 @@ data class ProspectRecord(
     var afterImageTimestamp: Long? = null,
     var beforeImageTimestamp: Long? = null,
     var afterImageUriString: String? = null,
+    // New fields for phases, tasks, documents, subcontractors
+    var phases: List<Phase> = emptyList(),
+    var phaseImages: List<PhaseImage> = emptyList(),
+    var tasks: List<Task> = emptyList(),
+    var documents: List<Document> = emptyList(),
+    var subcontractorAssignments: List<SubcontractorAssignment> = emptyList(),
     val dateCreated: Long = System.currentTimeMillis(),
     var dateUpdated: Long = System.currentTimeMillis()
+
+)
+@Serializable
+data class Subcontractor(
+    val id: String = UUID.randomUUID().toString(),
+    val name: String,
+    val specialty: String = "",
+    val contactName: String = "",
+    val phone: String = "",
+    val email: String = "",
+    val notes: String = ""
+)
+
+@Serializable
+data class Phase(
+    val id: String = UUID.randomUUID().toString(),
+    val name: String,
+    val order: Int,
+    val description: String = "",
+    var status: PhaseStatus = PhaseStatus.NOT_STARTED
+)
+
+@Serializable
+enum class PhaseStatus {
+    NOT_STARTED,
+    IN_PROGRESS,
+    COMPLETED
+}
+
+@Serializable
+data class Task(
+    val id: String = UUID.randomUUID().toString(),
+    val title: String,
+    val description: String = "",
+    var isCompleted: Boolean = false,
+    val dueDate: Long? = null,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+@Serializable
+data class PhaseImage(
+    val phaseId: String,
+    val imageUris: List<Pair<String, Long>> = emptyList() // URI and timestamp
+)
+
+@Serializable
+data class Document(
+    val id: String = UUID.randomUUID().toString(),
+    val name: String,
+    val uriString: String,
+    val fileType: String = "",
+    val uploadTimestamp: Long = System.currentTimeMillis()
+)
+
+@Serializable
+data class SubcontractorAssignment(
+    val subcontractorId: String,
+    val phaseId: String? = null, // null means assigned to all phases
+    val assignedAt: Long = System.currentTimeMillis()
 )

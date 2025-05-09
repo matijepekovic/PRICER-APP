@@ -264,6 +264,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // =============================================
     // Catalog & Product State
     // =============================================
+    private val _subcontractors = MutableStateFlow<List<Subcontractor>>(emptyList())
+    val subcontractors: StateFlow<List<Subcontractor>> = _subcontractors.asStateFlow()
+
+    private val _globalPhases = MutableStateFlow<List<Phase>>(emptyList())
+    val globalPhases: StateFlow<List<Phase>> = _globalPhases.asStateFlow()
+
+    private val _selectedPhaseIndex = MutableStateFlow(0)
+    val selectedPhaseIndex: StateFlow<Int> = _selectedPhaseIndex.asStateFlow()
 
     private val _catalogs = MutableStateFlow<Map<String, Catalog>>(emptyMap())
     val catalogs: StateFlow<Map<String, Catalog>> = _catalogs.asStateFlow()
@@ -449,7 +457,368 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // =============================================
     // UI Mode Navigation
     // =============================================
+    fun addSubcontractor(subcontractor: Subcontractor) {
+        _subcontractors.update { current ->
+            current + subcontractor
+        }
+        saveSubcontractors()
+    }
 
+    fun updateSubcontractor(subcontractor: Subcontractor) {
+        _subcontractors.update { current ->
+            current.map {
+                if (it.id == subcontractor.id) subcontractor else it
+            }
+        }
+        saveSubcontractors()
+    }
+
+    fun deleteSubcontractor(subcontractorId: String) {
+        _subcontractors.update { current ->
+            current.filter { it.id != subcontractorId }
+        }
+        saveSubcontractors()
+    }
+
+    // Add methods to manage global phases
+    fun saveGlobalPhases(phases: List<Phase>) {
+        _globalPhases.update { phases }
+        savePhases()
+
+        // Update any prospect records to include these phases
+        _prospectRecords.update { records ->
+            records.map { record ->
+                if (record.status == ProspectStatus.CUSTOMER) {
+                    // For customers, ensure they have all phases
+                    val existingPhaseIds = record.phases.map { it.id }
+                    val missingPhases = phases.filter { it.id !in existingPhaseIds }
+
+                    if (missingPhases.isNotEmpty()) {
+                        record.copy(phases = record.phases + missingPhases)
+                    } else {
+                        record
+                    }
+                } else {
+                    record
+                }
+            }
+        }
+
+        saveProspectRecords()
+    }
+
+    fun setSelectedPhaseIndex(index: Int) {
+        _selectedPhaseIndex.value = index.coerceIn(0, _globalPhases.value.size)
+    }
+
+    // Add methods for tasks
+    fun addTask(prospectId: String, task: Task) {
+        _prospectRecords.update { records ->
+            records.map { record ->
+                if (record.id == prospectId) {
+                    val updatedTasks = record.tasks + task
+                    record.copy(
+                        tasks = updatedTasks,
+                        dateUpdated = System.currentTimeMillis()
+                    )
+                } else {
+                    record
+                }
+            }
+        }
+        saveProspectRecords()
+    }
+
+    fun updateTask(prospectId: String, task: Task) {
+        _prospectRecords.update { records ->
+            records.map { record ->
+                if (record.id == prospectId) {
+                    val updatedTasks = record.tasks.map {
+                        if (it.id == task.id) task else it
+                    }
+                    record.copy(
+                        tasks = updatedTasks,
+                        dateUpdated = System.currentTimeMillis()
+                    )
+                } else {
+                    record
+                }
+            }
+        }
+        saveProspectRecords()
+    }
+
+    fun deleteTask(prospectId: String, taskId: String) {
+        _prospectRecords.update { records ->
+            records.map { record ->
+                if (record.id == prospectId) {
+                    val updatedTasks = record.tasks.filter { it.id != taskId }
+                    record.copy(
+                        tasks = updatedTasks,
+                        dateUpdated = System.currentTimeMillis()
+                    )
+                } else {
+                    record
+                }
+            }
+        }
+        saveProspectRecords()
+    }
+
+    fun toggleTaskCompletion(prospectId: String, taskId: String) {
+        _prospectRecords.update { records ->
+            records.map { record ->
+                if (record.id == prospectId) {
+                    val updatedTasks = record.tasks.map {
+                        if (it.id == taskId) it.copy(isCompleted = !it.isCompleted) else it
+                    }
+                    record.copy(
+                        tasks = updatedTasks,
+                        dateUpdated = System.currentTimeMillis()
+                    )
+                } else {
+                    record
+                }
+            }
+        }
+        saveProspectRecords()
+    }
+
+    // Methods for documents
+    fun addDocument(prospectId: String, document: Document) {
+        _prospectRecords.update { records ->
+            records.map { record ->
+                if (record.id == prospectId) {
+                    val updatedDocs = record.documents + document
+                    record.copy(
+                        documents = updatedDocs,
+                        dateUpdated = System.currentTimeMillis()
+                    )
+                } else {
+                    record
+                }
+            }
+        }
+        saveProspectRecords()
+    }
+
+    fun deleteDocument(prospectId: String, documentId: String) {
+        _prospectRecords.update { records ->
+            records.map { record ->
+                if (record.id == prospectId) {
+                    val updatedDocs = record.documents.filter { it.id != documentId }
+                    record.copy(
+                        documents = updatedDocs,
+                        dateUpdated = System.currentTimeMillis()
+                    )
+                } else {
+                    record
+                }
+            }
+        }
+        saveProspectRecords()
+    }
+
+    // Methods for phase images
+    fun addPhaseImage(prospectId: String, phaseId: String, imageUri: String) {
+        _prospectRecords.update { records ->
+            records.map { record ->
+                if (record.id == prospectId) {
+                    // Find existing phase image entry or create new one
+                    val timestamp = System.currentTimeMillis()
+                    val existingEntry = record.phaseImages.find { it.phaseId == phaseId }
+
+                    val updatedPhaseImages = if (existingEntry != null) {
+                        // Update existing entry
+                        record.phaseImages.map {
+                            if (it.phaseId == phaseId) {
+                                it.copy(imageUris = it.imageUris + Pair(imageUri, timestamp))
+                            } else {
+                                it
+                            }
+                        }
+                    } else {
+                        // Create new entry
+                        record.phaseImages + PhaseImage(
+                            phaseId = phaseId,
+                            imageUris = listOf(Pair(imageUri, timestamp))
+                        )
+                    }
+
+                    record.copy(
+                        phaseImages = updatedPhaseImages,
+                        dateUpdated = timestamp
+                    )
+                } else {
+                    record
+                }
+            }
+        }
+        saveProspectRecords()
+    }
+
+    fun removePhaseImage(prospectId: String, phaseId: String, imageUri: String) {
+        _prospectRecords.update { records ->
+            records.map { record ->
+                if (record.id == prospectId) {
+                    // Update the phase images
+                    val updatedPhaseImages = record.phaseImages.map { phaseImage ->
+                        if (phaseImage.phaseId == phaseId) {
+                            phaseImage.copy(
+                                imageUris = phaseImage.imageUris.filterNot { it.first == imageUri }
+                            )
+                        } else {
+                            phaseImage
+                        }
+                    }.filter { it.imageUris.isNotEmpty() } // Remove empty entries
+
+                    record.copy(
+                        phaseImages = updatedPhaseImages,
+                        dateUpdated = System.currentTimeMillis()
+                    )
+                } else {
+                    record
+                }
+            }
+        }
+        saveProspectRecords()
+    }
+
+    // Methods for subcontractor assignments
+    fun updateSubcontractorAssignments(prospectId: String, assignments: List<SubcontractorAssignment>) {
+        _prospectRecords.update { records ->
+            records.map { record ->
+                if (record.id == prospectId) {
+                    record.copy(
+                        subcontractorAssignments = assignments,
+                        dateUpdated = System.currentTimeMillis()
+                    )
+                } else {
+                    record
+                }
+            }
+        }
+        saveProspectRecords()
+    }
+
+    // Add to the initialization section
+    init {
+        loadSubcontractors()
+        loadPhases()
+    }
+
+    // Add methods for persistence
+    private fun saveSubcontractors() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val jsonString = json.encodeToString(_subcontractors.value)
+                val file = File(appContext.filesDir, "subcontractors.json")
+                file.writeText(jsonString)
+                Log.i(TAG, "Subcontractors saved successfully")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error saving subcontractors", e)
+            }
+        }
+    }
+
+    private fun loadSubcontractors() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val file = File(appContext.filesDir, "subcontractors.json")
+            if (file.exists()) {
+                try {
+                    val jsonString = file.readText()
+                    val subcontractors: List<Subcontractor> = json.decodeFromString(jsonString)
+                    withContext(Dispatchers.Main) {
+                        _subcontractors.value = subcontractors
+                        Log.i(TAG, "Loaded ${subcontractors.size} subcontractors")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error loading subcontractors", e)
+                    withContext(Dispatchers.Main) {
+                        _subcontractors.value = emptyList()
+                    }
+                }
+            } else {
+                Log.i(TAG, "No subcontractors file found. Starting with empty list.")
+                withContext(Dispatchers.Main) {
+                    _subcontractors.value = emptyList()
+                }
+            }
+        }
+    }
+
+    private fun savePhases() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val jsonString = json.encodeToString(_globalPhases.value)
+                val file = File(appContext.filesDir, "phases.json")
+                file.writeText(jsonString)
+                Log.i(TAG, "Phases saved successfully")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error saving phases", e)
+            }
+        }
+    }
+
+    private fun loadPhases() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val file = File(appContext.filesDir, "phases.json")
+            if (file.exists()) {
+                try {
+                    val jsonString = file.readText()
+                    val phases: List<Phase> = json.decodeFromString(jsonString)
+                    withContext(Dispatchers.Main) {
+                        _globalPhases.value = phases
+                        Log.i(TAG, "Loaded ${phases.size} phases")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error loading phases", e)
+                    withContext(Dispatchers.Main) {
+                        _globalPhases.value = emptyList()
+                    }
+                }
+            } else {
+                // Initialize with default phases
+                val defaultPhases = listOf(
+                    Phase(
+                        id = UUID.randomUUID().toString(),
+                        name = "Planning",
+                        order = 0,
+                        description = "Initial planning phase"
+                    ),
+                    Phase(
+                        id = UUID.randomUUID().toString(),
+                        name = "In Progress",
+                        order = 1,
+                        description = "Work is currently in progress"
+                    ),
+                    Phase(
+                        id = UUID.randomUUID().toString(),
+                        name = "Review",
+                        order = 2,
+                        description = "Work is complete and ready for review"
+                    ),
+                    Phase(
+                        id = UUID.randomUUID().toString(),
+                        name = "Complete",
+                        order = 3,
+                        description = "Project completed"
+                    )
+                )
+
+                Log.i(TAG, "No phases file found. Initializing with default phases.")
+                withContext(Dispatchers.Main) {
+                    _globalPhases.value = defaultPhases
+                }
+                savePhases()
+            }
+        }
+    }
+
+    // Add a method to show the Subcontractors screen
+    fun showSubcontractorsScreen() {
+        _uiMode.value = UiMode.SUBCONTRACTORS
+    }
     fun showContactsScreen() {
         _selectedProspectRecord.value = null // Clear selection when viewing list
         _uiMode.value = UiMode.CONTACTS
