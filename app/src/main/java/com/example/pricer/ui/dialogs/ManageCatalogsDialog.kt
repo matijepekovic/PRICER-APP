@@ -26,7 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.example.pricer.data.model.Catalog
 import kotlinx.coroutines.delay
-
+import androidx.compose.material.icons.filled.Business
 
 /**
  * Dialog for managing multiple Catalogs: Selecting the active one, adding new ones,
@@ -43,6 +43,7 @@ import kotlinx.coroutines.delay
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+
 fun ManageCatalogsDialog(
     catalogs: Map<String, Catalog>,
     activeCatalogId: String,
@@ -50,6 +51,7 @@ fun ManageCatalogsDialog(
     onSelectCatalog: (String) -> Unit,
     onAddCatalog: (String) -> Unit,
     onRenameCatalog: (id: String, newName: String) -> Unit,
+    onUpdateCompanyName: (id: String, newCompanyName: String) -> Unit, // Add new callback
     onDeleteCatalog: (id: String) -> Unit,
     onShareCatalog: (id: String) -> Unit // Added share callback
     // TODO: Add Save/Load All callbacks if needed
@@ -149,7 +151,8 @@ fun ManageCatalogsDialog(
                             onConfirmRename = { if (renameCatalogNewName.isNotBlank()){ onRenameCatalog(catalog.id, renameCatalogNewName.trim()); renamingCatalogId = null } else { renameError = true } },
                             onCancelRename = { renamingCatalogId = null; renameError = false },
                             onDelete = { showDeleteConfirmation = catalog.id },
-                            onShare = { onShareCatalog(catalog.id) } // *** PASS SHARE CALLBACK ***
+                            onShare = { onShareCatalog(catalog.id) }, // *** PASS SHARE CALLBACK ***
+                            onUpdateCompanyName = onUpdateCompanyName // *** ADD THIS NEW PARAMETER ***
                         )
                         Divider()
                     } // End items loop
@@ -180,7 +183,47 @@ fun ManageCatalogsDialog(
     } // End Main Dialog
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EditCompanyNameDialog(
+    catalog: Catalog,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var companyName by remember { mutableStateOf(catalog.companyName) }
 
+    Dialog(onDismissRequest = onDismiss) {
+        Card(shape = MaterialTheme.shapes.large) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Edit Company Name", style = MaterialTheme.typography.headlineSmall)
+                Spacer(modifier = Modifier.height(16.dp))
+
+                OutlinedTextField(
+                    value = companyName,
+                    onValueChange = { companyName = it },
+                    label = { Text("Company Name") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text("Cancel")
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(onClick = { onConfirm(companyName.trim()) }) {
+                        Text("Save")
+                    }
+                }
+            }
+        }
+    }
+}
 // --- Helper Composable for a single Catalog row in the list ---
 @Composable
 private fun CatalogListItem(
@@ -199,20 +242,22 @@ private fun CatalogListItem(
     onConfirmRename: () -> Unit,
     onCancelRename: () -> Unit,
     onDelete: () -> Unit,
-    onShare: () -> Unit // *** ADDED onShare Callback ***
+    onShare: () -> Unit, // *** ADDED onShare Callback ***
+    onUpdateCompanyName: (String, String) -> Unit // *** ADD THIS NEW PARAMETER ***
 ) {
     val focusManager = LocalFocusManager.current
     val rowModifier = Modifier
         .fillMaxWidth()
         .clickable(enabled = !isRenaming && interactionEnabled) { onSelect() }
         .padding(vertical = 8.dp, horizontal = 4.dp)
-
+    var showCompanyNameDialog by remember { mutableStateOf(false) }
     Row(modifier = rowModifier, verticalAlignment = Alignment.CenterVertically) {
         // Active Indicator
         if (isActive) { Icon(Icons.Filled.CheckCircle, "Active Catalog", tint=MaterialTheme.colorScheme.primary, modifier=Modifier.size(24.dp)) }
         else { Spacer(modifier = Modifier.width(24.dp)) }
         Spacer(Modifier.width(8.dp))
 
+        // Name / Rename TextField
         // Name / Rename TextField
         if (isRenaming) {
             OutlinedTextField( value = renameValue, onValueChange = onRenameValueChange, modifier = Modifier.weight(1f).focusRequester(renameFocusRequester),
@@ -222,13 +267,25 @@ private fun CatalogListItem(
                 trailingIcon = { Row { IconButton(onClick = onConfirmRename, enabled = renameValue.isNotBlank()) { Icon(Icons.Filled.Check, "Confirm Rename") }; IconButton(onClick = onCancelRename) { Icon(Icons.Filled.Cancel, "Cancel Rename") } } } )
         } else {
             Text( text = catalog.name, modifier = Modifier.weight(1f), fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis )
+
             // --- ACTION BUTTONS (Show only when not renaming) ---
-            // Share Button <<< ADDED HERE >>>
+            var showCompanyNameDialog by remember { mutableStateOf(false) }
+
+            // Share Button
             IconButton(onClick = onShare, enabled = interactionEnabled) {
                 Icon(Icons.Filled.Share, contentDescription = "Share ${catalog.name}")
             }
+
+            // Company Name Button
+            IconButton(onClick = { showCompanyNameDialog = true }, enabled = interactionEnabled) {
+                Icon(Icons.Filled.Business, contentDescription = "Edit Company Name for ${catalog.name}")
+            }
+
             // Rename Button
-            IconButton(onClick = onStartRename, enabled = interactionEnabled) { Icon(Icons.Filled.Edit, "Rename ${catalog.name}") }
+            IconButton(onClick = onStartRename, enabled = interactionEnabled) {
+                Icon(Icons.Filled.Edit, "Rename ${catalog.name}")
+            }
+
             // Delete Button
             IconButton(
                 onClick = onDelete,
@@ -242,5 +299,27 @@ private fun CatalogListItem(
                     contentDescription = "Delete ${catalog.name}"
                 )
             }
-    } // End Row
-}}
+
+            // Company Name Edit Dialog
+            if (showCompanyNameDialog) {
+                EditCompanyNameDialog(
+                    catalog = catalog,
+                    onDismiss = { showCompanyNameDialog = false },
+                    onConfirm = { newCompanyName ->
+                        onUpdateCompanyName(catalog.id, newCompanyName)
+                        showCompanyNameDialog = false
+                    }
+                )
+            }
+        } // End else block/ End Row
+} // Company Name Edit Dialog
+        if (showCompanyNameDialog) {
+            EditCompanyNameDialog(
+                catalog = catalog,
+                onDismiss = { showCompanyNameDialog = false },
+                onConfirm = { newCompanyName ->
+                    onUpdateCompanyName(catalog.id, newCompanyName)
+                    showCompanyNameDialog = false
+                }
+            )
+        }}

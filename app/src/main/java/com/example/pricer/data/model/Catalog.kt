@@ -13,6 +13,9 @@ data class Catalog(
     // User-defined name for the catalog (e.g., "Standard Materials", "Client X Services")
     var name: String = "Default Catalog", // 'var' to allow renaming
 
+    // Company name associated with this catalog
+    var companyName: String = "", // Add company name field
+
     // The list of all product definitions belonging to this catalog
     val products: List<Product> = emptyList(),
 

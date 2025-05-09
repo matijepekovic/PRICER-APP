@@ -233,7 +233,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-
+    fun updateCatalogCompanyName(catalogId: String, newCompanyName: String) {
+        var changed = false
+        _catalogs.update { map ->
+            map[catalogId]?.takeIf { it.companyName != newCompanyName }?.let {
+                changed = true
+                map.toMutableMap().apply { this[catalogId] = it.copy(companyName = newCompanyName) }
+            } ?: map
+        }
+        if(changed) saveCatalogs()
+    }
 
     private lateinit var imagePickerLauncher: ActivityResultLauncher<Array<String>>
     private var currentImageUploadInfo: Pair<String, Boolean>? = null // Pair<ProspectId, IsBeforeImage>
@@ -780,7 +789,78 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _currentQuote.update { q -> q?.copy(companyName = companyName, customMessage = customMessage) }
         dismissDialog()
     }
+    // Add a custom item directly to the quote without saving to catalog
+    fun addCustomItemToQuote(product: Product, quantity: Int) {
+        Log.i(TAG, "Adding custom item to quote: ${product.name}, Qty: $quantity")
 
+        // Update item quantities
+        _itemQuantities.update { current ->
+            current.toMutableMap().apply {
+                this[product.id] = quantity.toString()
+            }
+        }
+
+        // Temporarily add the product to active catalog for quote generation
+        _catalogs.update { catalogsMap ->
+            val id = _activeCatalogId.value
+            val cat = catalogsMap[id] ?: return@update catalogsMap
+            val updatedProducts = cat.products + product
+            catalogsMap.toMutableMap().apply {
+                this[id] = cat.copy(products = updatedProducts)
+            }
+        }
+
+        // Build an updated quote
+        buildQuote()
+
+        // If we're not already in quote preview, switch to it
+        if (_uiMode.value != UiMode.QUOTE_PREVIEW) {
+            if(_currentQuote.value?.customerName.isNullOrBlank()) {
+                _quoteCustomerName.value = ""
+                showDialog(DialogState.CUSTOMER_DETAILS)
+            } else {
+                _uiMode.value = UiMode.QUOTE_PREVIEW
+            }
+        }
+
+        dismissDialog()
+    }
+    // Add a voucher to the quote (appears as a negative value item)
+    fun addVoucherToQuote(voucherProduct: Product) {
+        Log.i(TAG, "Adding voucher to quote: ${voucherProduct.name}, Amount: ${-voucherProduct.basePrice}")
+
+        // Vouchers always have quantity of 1
+        _itemQuantities.update { current ->
+            current.toMutableMap().apply {
+                this[voucherProduct.id] = "1"
+            }
+        }
+
+        // Temporarily add the voucher product to active catalog for quote generation
+        _catalogs.update { catalogsMap ->
+            val id = _activeCatalogId.value
+            val cat = catalogsMap[id] ?: return@update catalogsMap
+            val updatedProducts = cat.products + voucherProduct
+            catalogsMap.toMutableMap().apply {
+                this[id] = cat.copy(products = updatedProducts)
+            }
+        }
+
+        // Build an updated quote
+        buildQuote()
+
+        // If we're not already in quote preview, switch to it
+        if (_uiMode.value != UiMode.QUOTE_PREVIEW) {
+            if(_currentQuote.value?.customerName.isNullOrBlank()) {
+                _quoteCustomerName.value = ""
+                showDialog(DialogState.CUSTOMER_DETAILS)
+            } else {
+                _uiMode.value = UiMode.QUOTE_PREVIEW
+            }
+        }
+
+        dismissDialog()
+    }
     private fun buildQuote() {
         Log.i(TAG,"Building Quote with partial multiplier quantities...")
         val catalog = activeCatalog.value ?: return Unit.also { Log.e(TAG,"QF:No cat") }
@@ -834,12 +914,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (quoteItems.isNotEmpty()) {
             val existingQuote = _currentQuote.value
 
+            val catalogCompanyName = catalog.companyName
+
             _currentQuote.value = Quote(
                 id = existingQuote?.id ?: UUID.randomUUID().toString(),
                 customerName = existingQuote?.customerName ?: _quoteCustomerName.value,
                 customerEmail = existingQuote?.customerEmail ?: _quoteCustomerEmail.value,
                 customerPhone = existingQuote?.customerPhone ?: _quoteCustomerPhone.value,
-                companyName = existingQuote?.companyName ?: _quoteCompanyName.value,
+                companyName = existingQuote?.companyName ?: catalogCompanyName, // Use catalog company name
                 customMessage = existingQuote?.customMessage ?: _quoteCustomMessage.value,
                 items = quoteItems,
                 taxRate = _taxRate.value,

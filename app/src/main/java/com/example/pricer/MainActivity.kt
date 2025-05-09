@@ -906,7 +906,12 @@ class MainActivity : ComponentActivity() {
                     onConfirm = { viewModel.setTaxRate(it) }
                 )
             }
-
+            DialogState.ADD_VOUCHER -> {
+                AddVoucherDialog(
+                    onDismiss = { viewModel.dismissDialog() },
+                    onConfirm = { voucherProduct -> viewModel.addVoucherToQuote(voucherProduct) }
+                )
+            }
             DialogState.MANAGE_CATALOGS -> {
                 ManageCatalogsDialog(
                     catalogs = catalogs,
@@ -915,11 +920,11 @@ class MainActivity : ComponentActivity() {
                     onSelectCatalog = { viewModel.loadCatalog(it) },
                     onAddCatalog = { viewModel.createCatalog(it) },
                     onRenameCatalog = { id, name -> viewModel.renameCatalog(id, name) },
+                    onUpdateCompanyName = { id, companyName -> viewModel.updateCatalogCompanyName(id, companyName) }, // Add new callback
                     onDeleteCatalog = { viewModel.deleteCatalog(it) },
                     onShareCatalog = onShareRequested
                 )
             }
-
             DialogState.ADD_NOTE -> {
                 selectedProspect?.let { prospect ->
                     NoteDialog(
@@ -1004,7 +1009,12 @@ class MainActivity : ComponentActivity() {
                     onConfirm = { comp, msg -> viewModel.updateQuoteDetails(comp, msg) }
                 )
             }
-
+            DialogState.ADD_CUSTOM_ITEM -> {
+                AddCustomItemDialog(
+                    onDismiss = { viewModel.dismissDialog() },
+                    onConfirm = { product, quantity -> viewModel.addCustomItemToQuote(product, quantity) }
+                )
+            }
             DialogState.SET_DISCOUNT -> {
                 SetDiscountDialog(
                     initialDiscountRate = globalDiscountRate,

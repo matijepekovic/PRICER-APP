@@ -54,6 +54,18 @@ fun QuotePreviewScreen(
                             contentDescription = "Set Global Discount"
                         )
                     }
+                    IconButton(onClick = { viewModel.showDialog(DialogState.ADD_CUSTOM_ITEM) }) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "Add Custom Item"
+                        )
+                    }
+                    IconButton(onClick = { viewModel.showDialog(DialogState.ADD_VOUCHER) }) {
+                        Icon(
+                            imageVector = Icons.Default.ConfirmationNumber, // Voucher/Coupon icon
+                            contentDescription = "Add Voucher"
+                        )
+                    }
                 }
             )
         },
@@ -156,16 +168,19 @@ private fun QuoteLineItem(
     onRemoveItem: () -> Unit,
 
 ) {
+    // Determine if this is a voucher (negative price item)
+    val isVoucher = item.product.basePrice < 0 && item.product.category == "Voucher"
+    val textColor = if (isVoucher) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.Top
     ) {
         // Item Name, Description, Multipliers Column
         Column(modifier = Modifier.weight(2.5f).padding(end = 8.dp)) {
-            Text( text = item.product.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold )
+            Text( text = item.product.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold,color = textColor )
             if (item.product.description.isNotEmpty()) {
                 // Removed maxLines/overflow to show full description
-                Text( text = item.product.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant )
+                Text( text = item.product.description, style = MaterialTheme.typography.bodySmall, color = if (isVoucher) textColor else MaterialTheme.colorScheme.onSurfaceVariant )
             }
             item.appliedMultipliers.forEach { mult ->
                 val valueStr = when (mult.type) { MultiplierType.PERCENTAGE -> formatPercentage(mult.appliedValue); MultiplierType.FIXED_PER_UNIT -> "${formatCurrency(mult.appliedValue)}/unit" }
@@ -173,11 +188,11 @@ private fun QuoteLineItem(
             }
         }
         // Quantity Text
-        Text( text = item.quantity.toString(), modifier = Modifier.weight(0.6f).padding(top = 2.dp), style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.End )
+        Text( text = item.quantity.toString(), modifier = Modifier.weight(0.6f).padding(top = 2.dp), style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.End,  color = textColor )
         // Unit Price Text
-        Text( text = formatCurrency(item.product.basePrice), modifier = Modifier.weight(1.0f).padding(top = 2.dp), style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.End )
+        Text( text = formatCurrency(item.product.basePrice), modifier = Modifier.weight(1.0f).padding(top = 2.dp), style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.End ,  color = textColor)
         // Line Total Text
-        Text( text = formatCurrency(item.lineTotalBeforeDiscount), modifier = Modifier.weight(1.1f).padding(top = 2.dp), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.End )
+        Text( text = formatCurrency(item.lineTotalBeforeDiscount), modifier = Modifier.weight(1.1f).padding(top = 2.dp), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.End ,  color = textColor)
 
         // --- Action Buttons Column (to stack them vertically if needed, or keep in Row) ---
         Column(horizontalAlignment = Alignment.CenterHorizontally) { // Stack buttons vertically

@@ -88,7 +88,9 @@ enum class DialogState {
     SET_DISCOUNT,
     ADD_NOTE,
     EDIT_NOTE,
-    SET_REMINDER
+    SET_REMINDER,
+    ADD_CUSTOM_ITEM,
+    ADD_VOUCHER
 }
 @Serializable
 enum class ProspectStatus { PROSPECT, CUSTOMER }
