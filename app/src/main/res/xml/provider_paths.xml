@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- For sharing original catalogs saved to cache -->
+    <external-path name="external_files" path="."/>
+    <cache-path name="shared_catalogs" path="shared_catalogs/"/>
+    <cache-path name="view_cache" path="view_cache/"/>
+    <files-path name="files" path="."/>
+    <cache-path name="cache" path="."/>
     <cache-path
         name="shared_catalogs"
         path="shared_catalogs/" />

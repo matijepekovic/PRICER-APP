@@ -14,6 +14,7 @@ import androidx.activity.viewModels
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.flow.collect
+import android.provider.Settings
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -48,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.serialization.decodeFromString
 import com.example.pricer.data.model.Catalog
 
+
 // Lifecycle imports
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.activity.ComponentActivity
@@ -70,6 +72,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 // Java Util imports
 import java.text.SimpleDateFormat
 import java.util.*
@@ -77,7 +80,12 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.decodeFromString
 import java.io.IOException
 import android.Manifest
+import android.os.Environment
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
 import com.example.pricer.ui.screens.ProspectsTabsContainer
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.PhotoLibrary
 
 class MainActivity : ComponentActivity() {
     // Keep state at class level
@@ -86,9 +94,20 @@ class MainActivity : ComponentActivity() {
     private var catalogNameConflict by mutableStateOf<Pair<Catalog, String>?>(null)
     private var isLoading by mutableStateOf(false)
     private var loadingMessage by mutableStateOf<String?>(null)
+    private var showPermissionDialog by mutableStateOf(false)
+    private var showImageSourceDialog by mutableStateOf(false)
+
+    // Add these variables for image upload functionality
+    private lateinit var galleryLauncher: ActivityResultLauncher<String>
+    private lateinit var cameraLauncher: ActivityResultLauncher<Uri>
+    private var currentImageUploadInfo: Pair<String, Boolean>? = null // Pair<ProspectId, IsBeforeImage>
+    private var currentPhotoUri: Uri? = null
 
     private companion object {
         private const val REQUEST_NOTIFICATION_PERMISSION = 100
+        private const val STORAGE_PERMISSION_CODE = 101
+        private const val FILE_PICKER_CODE = 123
+        private const val CAMERA_PERMISSION_CODE = 102
     }
 
     private fun copyUriToFile(context: Context, sourceUri: Uri, destinationFile: File): Boolean {
@@ -112,11 +131,117 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: MainViewModel by viewModels()
     private val instanceId = UUID.randomUUID().toString().substring(0, 5)
-    private lateinit var notificationPermissionLauncher: androidx.activity.result.ActivityResultLauncher<String>
+    private lateinit var notificationPermissionLauncher: ActivityResultLauncher<String>
     private lateinit var catalogImportLauncher: ActivityResultLauncher<Array<String>>
+    private lateinit var requestPermissionLauncher: ActivityResultLauncher<String>
+    private lateinit var cameraPermissionLauncher: ActivityResultLauncher<String>
+
+    private val manageAllFilesLauncher: ActivityResultLauncher<Intent> =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+                Environment.isExternalStorageManager()
+            ) {
+                launchCatalogFilePicker()
+            } else {
+                Toast.makeText(this,
+                    "Please enable All-files access in Settings → Special app access → All files access",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+
+    // Creates a temporary file for camera photos
+    private fun createImageFile(): File {
+        val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+        val storageDir = File(cacheDir, "camera_photos")
+        storageDir.mkdirs()
+        return File(storageDir, "IMG_${timeStamp}.jpg")
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-// Initialize catalog import launcher
+
+        // Initialize permission launcher for storage
+        requestPermissionLauncher = registerForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ) { isGranted: Boolean ->
+            if (isGranted) {
+                // Permission granted, now launch file picker
+                launchCatalogFilePicker()
+            } else {
+                // Permission denied
+                Toast.makeText(this, "Storage permission is required to import catalogs", Toast.LENGTH_LONG).show()
+                showPermissionDialog = true
+            }
+        }
+
+        // Initialize permission launcher for camera
+        cameraPermissionLauncher = registerForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ) { isGranted: Boolean ->
+            if (isGranted) {
+                // Camera permission granted, launch camera
+                launchCamera()
+            } else {
+                // Camera permission denied
+                Toast.makeText(this, "Camera permission is required to take photos", Toast.LENGTH_LONG).show()
+            }
+        }
+
+        // Initialize gallery launcher
+        galleryLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+            if (uri != null) {
+                Log.d("MainActivity", "Selected image from gallery: $uri")
+
+                // Take persistable permissions
+                try {
+                    val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    contentResolver.takePersistableUriPermission(uri, takeFlags)
+                    Log.d("MainActivity", "Took persistent permissions for gallery image URI")
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "Failed to take permissions for gallery image: ${e.message}")
+                }
+
+                // Process selected image
+                currentImageUploadInfo?.let { (prospectId, isBeforeImage) ->
+                    viewModel.saveImageToProspect(prospectId, uri, isBeforeImage)
+                }
+            } else {
+                Log.d("MainActivity", "No image selected from gallery")
+            }
+
+            // Reset state
+            showImageSourceDialog = false
+            currentImageUploadInfo = null
+        }
+
+        // Initialize camera launcher
+        cameraLauncher = registerForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+            if (success && currentPhotoUri != null) {
+                Log.d("MainActivity", "Photo captured successfully: $currentPhotoUri")
+
+                // Process captured image
+                currentImageUploadInfo?.let { (prospectId, isBeforeImage) ->
+                    viewModel.saveImageToProspect(prospectId, currentPhotoUri!!, isBeforeImage)
+                }
+            } else {
+                Log.d("MainActivity", "Failed to capture photo or cancelled")
+            }
+
+            // Reset state
+            showImageSourceDialog = false
+            currentImageUploadInfo = null
+            currentPhotoUri = null
+        }
+
+        // Initialize notification permission launcher
+        notificationPermissionLauncher = registerForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ) { isGranted ->
+            Log.d("MainActivity", "Notification permission: ${if (isGranted) "granted" else "denied"}")
+        }
+
+        // Initialize catalog import launcher
         catalogImportLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) {
                 Log.d("MainActivity", "Selected file URI: $uri")
@@ -199,7 +324,9 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+
         Log.i("PricerAppLifecycle", "MainActivity ($instanceId) onCreate. ViewModel hash: ${viewModel.hashCode()}. Intent: $intent, Action: ${intent?.action}, Data: ${intent?.data}, Flags: ${intent?.flags}")
+
         // Request notification permissions for Android 13+
         checkNotificationPermission()
 
@@ -275,6 +402,7 @@ class MainActivity : ComponentActivity() {
                 )
 
                 fun launchPdfGeneration() { requestDirectoryLauncher.launch(null) }
+
                 // Share Event Collector
                 LaunchedEffect(Unit) {
                     viewModel.shareCatalogEvent.collect { shareableUri ->
@@ -298,6 +426,15 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                // Image Upload Event Collector
+                LaunchedEffect(Unit) {
+                    viewModel.imageUploadEvent.collect { (prospectId, isBeforeImage) ->
+                        Log.d("MainActivity", "Image upload requested for prospect $prospectId, before image: $isBeforeImage")
+                        currentImageUploadInfo = Pair(prospectId, isBeforeImage)
+                        showImageSourceDialog = true
+                    }
+                }
+
                 val handleShareRequest = { catalogId: String -> viewModel.requestShareCatalog(catalogId) }
 
                 Scaffold(
@@ -316,6 +453,91 @@ class MainActivity : ComponentActivity() {
                         dialogState = currentDialog,
                         viewModel = viewModel,
                         onShareRequested = handleShareRequest
+                    )
+                }
+
+                // Permission Dialog
+                if (showPermissionDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showPermissionDialog = false },
+                        title = { Text("Permission Required") },
+                        text = {
+                            Text("Storage permission is required to import catalogs. Please go to app settings to enable it.")
+                        },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    showPermissionDialog = false
+                                    val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                        data = Uri.fromParts("package", packageName, null)
+                                    }
+                                    startActivity(intent)
+                                }
+                            ) {
+                                Text("Open Settings")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showPermissionDialog = false }) {
+                                Text("Cancel")
+                            }
+                        }
+                    )
+                }
+
+                // Image Source Dialog
+                if (showImageSourceDialog) {
+                    AlertDialog(
+                        onDismissRequest = {
+                            showImageSourceDialog = false
+                            currentImageUploadInfo = null
+                        },
+                        title = { Text("Choose Image Source") },
+                        text = {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Button(
+                                    onClick = { checkCameraPermission() },
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CameraAlt,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(ButtonDefaults.IconSize)
+                                    )
+                                    Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                                    Text("Take Photo with Camera")
+                                }
+
+                                Button(
+                                    onClick = {
+                                        galleryLauncher.launch("image/*")
+                                    },
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.PhotoLibrary,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(ButtonDefaults.IconSize)
+                                    )
+                                    Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                                    Text("Choose from Gallery")
+                                }
+                            }
+                        },
+                        confirmButton = { },
+                        dismissButton = {
+                            TextButton(
+                                onClick = {
+                                    showImageSourceDialog = false
+                                    currentImageUploadInfo = null
+                                }
+                            ) {
+                                Text("Cancel")
+                            }
+                        }
                     )
                 }
 
@@ -451,6 +673,32 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun checkCameraPermission() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            launchCamera()
+        } else {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    private fun launchCamera() {
+        try {
+            val photoFile = createImageFile()
+            val photoURI = FileProvider.getUriForFile(
+                this,
+                "${packageName}.fileprovider",
+                photoFile
+            )
+            currentPhotoUri = photoURI
+            cameraLauncher.launch(photoURI)
+        } catch (ex: IOException) {
+            Toast.makeText(this, "Error creating image file", Toast.LENGTH_SHORT).show()
+            Log.e("MainActivity", "Error creating image file", ex)
+            showImageSourceDialog = false
+            currentImageUploadInfo = null
+        }
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         Log.i("PricerAppLifecycle", "MainActivity ($instanceId) onNewIntent. ViewModel hash: ${viewModel.hashCode()}. New Intent: $intent, Action: ${intent?.action}, Data: ${intent?.data}, Flags: ${intent?.flags}")
@@ -475,17 +723,6 @@ class MainActivity : ComponentActivity() {
 
     private fun checkNotificationPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            // Register permission launcher
-            val requestPermissionLauncher = registerForActivityResult(
-                ActivityResultContracts.RequestPermission()
-            ) { isGranted ->
-                if (isGranted) {
-                    Log.d("MainActivity", "Notification permission granted")
-                } else {
-                    Log.d("MainActivity", "Notification permission denied")
-                }
-            }
-
             // Check if permission is already granted
             if (ContextCompat.checkSelfPermission(
                     this,
@@ -493,7 +730,7 @@ class MainActivity : ComponentActivity() {
                 ) != PackageManager.PERMISSION_GRANTED
             ) {
                 // Launch permission request
-                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
     }
@@ -768,178 +1005,178 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
-            DialogState.SET_DISCOUNT->{SetDiscountDialog(initialDiscountRate=globalDiscountRate,onDismiss={viewModel.dismissDialog()},onConfirm={viewModel.setGlobalDiscount(it); viewModel.dismissDialog(); viewModel.showQuotePreview()})}
-        }
-    }
-    // Add these methods INSIDE your MainActivity class, before the final }
-
-    fun openCatalogImport() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            if (checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE), 456)
-                Toast.makeText(this, "Please grant storage permission to import catalogs", Toast.LENGTH_LONG).show()
-                return
+            DialogState.SET_DISCOUNT -> {
+                SetDiscountDialog(
+                    initialDiscountRate = globalDiscountRate,
+                    onDismiss = { viewModel.dismissDialog() },
+                    onConfirm = {
+                        viewModel.setGlobalDiscount(it)
+                        viewModel.dismissDialog()
+                        viewModel.showQuotePreview()
+                    }
+                )
             }
         }
+    }
+    fun openCatalogImport() {
+        // For Android 11+ (API 30+), we need to request MANAGE_EXTERNAL_STORAGE
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (!Environment.isExternalStorageManager()) {
+                // Need to request MANAGE_EXTERNAL_STORAGE permission
+                try {
+                    Log.d("MainActivity", "Requesting MANAGE_EXTERNAL_STORAGE permission")
+                    val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                        data = Uri.parse("package:$packageName")
+                    }
+                    manageAllFilesLauncher.launch(intent)
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "Error launching settings for MANAGE_EXTERNAL_STORAGE", e)
+                    Toast.makeText(this, "Unable to request all files access. Please enable it manually in Settings.", Toast.LENGTH_LONG).show()
+                }
+                return
+            }
+            // If we have MANAGE_EXTERNAL_STORAGE, proceed with file picker
+            launchCatalogFilePicker()
+        }
+        // For Android 10 and below, we use READ_EXTERNAL_STORAGE permission
+        else {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                // Request permission
+                requestPermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+            } else {
+                // We already have permission, launch file picker
+                launchCatalogFilePicker()
+            }
+        }
+    }
 
+    private fun launchCatalogFilePicker() {
         try {
+            Log.d("MainActivity", "Launching catalogImportLauncher")
+            // Use the modern launcher approach with MIME types
             catalogImportLauncher.launch(arrayOf("application/json", "text/plain"))
         } catch (e: Exception) {
-            Log.e("MainActivity", "Error launching file picker", e)
-            Toast.makeText(this, "Cannot open file picker: ${e.message}", Toast.LENGTH_SHORT).show()
+            Log.e("MainActivity", "Error launching catalogImportLauncher", e)
+
+            // Fallback to traditional approach
+            try {
+                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "*/*"
+                    putExtra(Intent.EXTRA_MIME_TYPES, arrayOf(
+                        "application/json",
+                        "text/plain"
+                    ))
+                }
+                startActivityForResult(intent, FILE_PICKER_CODE)
+            } catch (e2: Exception) {
+                Log.e("MainActivity", "Error with fallback file picker too", e2)
+                Toast.makeText(this, "Cannot open file picker: ${e2.message}", Toast.LENGTH_SHORT).show()
+            }
         }
+    }
 
-        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-            addCategory(Intent.CATEGORY_OPENABLE)
-            type = "*/*"
-            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf(
-                "application/json",
-                "text/plain"
-            ))
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
 
-            // Make it easier to navigate
-            putExtra(Intent.EXTRA_TITLE, "Select Catalog File")
-            putExtra(Intent.EXTRA_LOCAL_ONLY, true)
-
-            // Add flags to help with permissions
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
-        }
-
-        try {
-            Log.d("MainActivity", "Opening file picker...")
-            startActivityForResult(intent, 123)
-        } catch (e: Exception) {
-            Log.e("MainActivity", "Error opening file picker", e)
-            Toast.makeText(this, "Cannot open file picker: ${e.message}", Toast.LENGTH_SHORT).show()
+        when (requestCode) {
+            STORAGE_PERMISSION_CODE -> {
+                if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    // Permission granted
+                    Toast.makeText(this, "Storage permission granted, you can now import catalogs", Toast.LENGTH_SHORT).show()
+                    launchCatalogFilePicker()
+                } else {
+                    // Permission denied
+                    Toast.makeText(this, "Storage permission is required to import catalogs", Toast.LENGTH_LONG).show()
+                    showPermissionDialog = true
+                }
+            }
+            CAMERA_PERMISSION_CODE -> {
+                if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    // Camera permission granted
+                    launchCamera()
+                } else {
+                    // Camera permission denied
+                    Toast.makeText(this, "Camera permission is required to take photos", Toast.LENGTH_LONG).show()
+                    showImageSourceDialog = false
+                    currentImageUploadInfo = null
+                }
+            }
         }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
 
-        Log.d("MainActivity", "onActivityResult - requestCode: $requestCode, resultCode: $resultCode")
+        if ((requestCode == FILE_PICKER_CODE || requestCode == 123) && resultCode == RESULT_OK) {
+            val uri = data?.data
+            if (uri != null) {
+                Log.d("MainActivity", "Selected file URI: $uri")
 
-        if (requestCode == 123) {
-            if (resultCode == RESULT_OK) {
-                val uri = data?.data
-                if (uri != null) {
-                    Log.d("MainActivity", "Selected file URI: $uri")
-                    Toast.makeText(this, "File selected, processing...", Toast.LENGTH_SHORT).show()
+                // Take persistable permissions
+                try {
+                    val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    contentResolver.takePersistableUriPermission(uri, takeFlags)
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "Failed to take permissions: ${e.message}")
+                    // Continue anyway - might still work
+                }
 
-                    // Start on a background thread to avoid blocking UI
-                    Thread {
-                        try {
-                            // Take persistable permissions
-                            try {
-                                val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION
-                                contentResolver.takePersistableUriPermission(uri, takeFlags)
-                                Log.d("MainActivity", "Took persistent permissions for URI")
-                            } catch (e: Exception) {
-                                Log.e("MainActivity", "Failed to take permissions", e)
-                                // Continue anyway - might still work
-                            }
+                // Process file in background thread
+                isLoading = true
+                loadingMessage = "Reading catalog file..."
 
-                            // Start loading state
-                            runOnUiThread {
-                                isLoading = true
-                                loadingMessage = "Reading catalog file..."
-                            }
+                Thread {
+                    try {
+                        // Read file content
+                        val jsonString = contentResolver.openInputStream(uri)?.use { inputStream ->
+                            inputStream.readBytes().toString(Charsets.UTF_8)
+                        }
 
-                            // Read the file content
-                            Log.d("MainActivity", "Attempting to read file content")
-                            var jsonString: String? = null
-                            try {
-                                jsonString = contentResolver.openInputStream(uri)?.use { inputStream ->
-                                    val bytes = inputStream.readBytes()
-                                    Log.d("MainActivity", "Read ${bytes.size} bytes from file")
-                                    String(bytes)
-                                }
-                            } catch (e: Exception) {
-                                Log.e("MainActivity", "Error reading file content", e)
-                                runOnUiThread {
-                                    isLoading = false
-                                    loadingMessage = null
-                                    Toast.makeText(this, "Error reading file: ${e.message}", Toast.LENGTH_LONG).show()
-                                }
-                                return@Thread
-                            }
-
-                            if (jsonString.isNullOrBlank()) {
-                                Log.e("MainActivity", "File content is null or empty")
-                                runOnUiThread {
-                                    isLoading = false
-                                    loadingMessage = null
-                                    Toast.makeText(this, "File is empty", Toast.LENGTH_SHORT).show()
-                                }
-                                return@Thread
-                            }
-
-                            Log.d("MainActivity", "File content preview: ${jsonString.take(100)}...")
-
-                            // Try to parse the JSON
-                            val catalog: Catalog
-                            try {
-                                val json = Json { ignoreUnknownKeys = true }
-                                catalog = json.decodeFromString(jsonString)
-                                Log.d("MainActivity", "Successfully parsed catalog: ${catalog.name} with ${catalog.products.size} products")
-                            } catch (e: Exception) {
-                                Log.e("MainActivity", "JSON parsing failed", e)
-                                runOnUiThread {
-                                    isLoading = false
-                                    loadingMessage = null
-                                    Toast.makeText(this, "Invalid catalog format: ${e.message}", Toast.LENGTH_LONG).show()
-                                }
-                                return@Thread
-                            }
-
-                            // Verify catalog looks valid
-                            if (catalog.name.isBlank()) {
-                                Log.e("MainActivity", "Catalog name is blank")
-                                runOnUiThread {
-                                    isLoading = false
-                                    loadingMessage = null
-                                    Toast.makeText(this, "Invalid catalog: missing name", Toast.LENGTH_LONG).show()
-                                }
-                                return@Thread
-                            }
-
-                            // Finish on UI thread
+                        if (jsonString.isNullOrBlank()) {
                             runOnUiThread {
                                 isLoading = false
                                 loadingMessage = null
-
-                                // Check for name conflicts
-                                val nameExists = viewModel.catalogNameExists(catalog.name)
-                                Log.d("MainActivity", "Name conflict check: ${catalog.name} exists = $nameExists")
-
-                                if (nameExists) {
-                                    // Show name conflict dialog
-                                    catalogNameConflict = Pair(catalog, catalog.name)
-                                    Log.d("MainActivity", "Showing name conflict dialog")
-                                } else {
-                                    // Show confirmation dialog
-                                    catalogToConfirmImport = catalog
-                                    Log.d("MainActivity", "Showing confirmation dialog")
-                                }
+                                Toast.makeText(this, "File is empty", Toast.LENGTH_SHORT).show()
                             }
+                            return@Thread
+                        }
+
+                        // Parse catalog
+                        val catalog = try {
+                            Json { ignoreUnknownKeys = true }.decodeFromString<Catalog>(jsonString)
                         } catch (e: Exception) {
-                            Log.e("MainActivity", "Unexpected error during import", e)
+                            Log.e("MainActivity", "JSON parsing failed", e)
                             runOnUiThread {
                                 isLoading = false
                                 loadingMessage = null
-                                Toast.makeText(this, "Import failed: ${e.message}", Toast.LENGTH_LONG).show()
+                                Toast.makeText(this, "Invalid catalog format", Toast.LENGTH_LONG).show()
+                            }
+                            return@Thread
+                        }
+
+                        // Check for name conflict and show confirmation
+                        runOnUiThread {
+                            isLoading = false
+                            loadingMessage = null
+
+                            val nameExists = viewModel.catalogNameExists(catalog.name)
+                            if (nameExists) {
+                                catalogNameConflict = Pair(catalog, catalog.name)
+                            } else {
+                                catalogToConfirmImport = catalog
                             }
                         }
-                    }.start()
-                } else {
-                    Log.e("MainActivity", "Selected file URI is null")
-                    Toast.makeText(this, "No file selected", Toast.LENGTH_SHORT).show()
-                }
-            } else {
-                Log.d("MainActivity", "File selection cancelled or failed. Result code: $resultCode")
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "Error processing file", e)
+                        runOnUiThread {
+                            isLoading = false
+                            loadingMessage = null
+                            Toast.makeText(this, "Error importing catalog: ${e.message}", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }.start()
             }
         }
     }
-
 }

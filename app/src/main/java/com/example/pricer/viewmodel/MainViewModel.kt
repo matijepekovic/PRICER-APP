@@ -8,6 +8,9 @@ import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
 import android.net.Uri
 import android.util.Log
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import androidx.activity.result.ActivityResultLauncher
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -66,6 +69,175 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         isLenient = true
         ignoreUnknownKeys = true
     }
+
+    // =============================================
+// Project Image Management
+// =============================================
+// Add these to your MainViewModel class
+
+    // Image upload event handler
+    private val _imageUploadEvent = MutableSharedFlow<Pair<String, Boolean>>()
+    val imageUploadEvent: SharedFlow<Pair<String, Boolean>> = _imageUploadEvent.asSharedFlow()
+
+    // Request functions
+    fun requestBeforeImageUpload(prospectId: String) {
+        viewModelScope.launch {
+            _imageUploadEvent.emit(Pair(prospectId, true))
+        }
+    }
+
+    fun requestAfterImageUpload(prospectId: String) {
+        viewModelScope.launch {
+            _imageUploadEvent.emit(Pair(prospectId, false))
+        }
+    }
+
+    // Save image
+    fun saveImageToProspect(prospectId: String, imageUri: Uri, isBeforeImage: Boolean) {
+        viewModelScope.launch {
+            val timestamp = System.currentTimeMillis()
+            var updatedRecord: ProspectRecord? = null
+
+            _prospectRecords.update { currentRecords ->
+                currentRecords.map { record ->
+                    if (record.id == prospectId) {
+                        val result = if (isBeforeImage) {
+                            // Add to before images
+                            val newPair = Pair(imageUri.toString(), timestamp)
+                            val updatedUris = record.beforeImageUris + newPair
+
+                            record.copy(
+                                beforeImageUris = updatedUris,
+                                // Also update legacy field if it was the first image
+                                beforeImageUriString = record.beforeImageUriString ?: imageUri.toString(),
+                                beforeImageTimestamp = record.beforeImageTimestamp ?: timestamp,
+                                dateUpdated = timestamp
+                            )
+                        } else {
+                            // Add to after images
+                            val newPair = Pair(imageUri.toString(), timestamp)
+                            val updatedUris = record.afterImageUris + newPair
+
+                            record.copy(
+                                afterImageUris = updatedUris,
+                                // Also update legacy field if it was the first image
+                                afterImageUriString = record.afterImageUriString ?: imageUri.toString(),
+                                afterImageTimestamp = record.afterImageTimestamp ?: timestamp,
+                                dateUpdated = timestamp
+                            )
+                        }
+
+                        updatedRecord = result
+                        result
+                    } else {
+                        record
+                    }
+                }
+            }
+
+            // Update selected prospect record if needed
+            updatedRecord?.let { updateSelectedProspect(it) }
+
+            saveProspectRecords()
+            _snackbarMessage.emit("Image added successfully")
+        }
+    }
+
+    fun removeBeforeImage(prospectId: String, imageUri: String) {
+        viewModelScope.launch {
+            var updatedRecord: ProspectRecord? = null
+
+            _prospectRecords.update { currentRecords ->
+                currentRecords.map { record ->
+                    if (record.id == prospectId) {
+                        val updatedUris = record.beforeImageUris.filterNot { it.first == imageUri }
+
+                        // Update legacy fields if needed
+                        val newLegacyUri = if (record.beforeImageUriString == imageUri) {
+                            updatedUris.firstOrNull()?.first
+                        } else {
+                            record.beforeImageUriString
+                        }
+
+                        val newLegacyTimestamp = if (record.beforeImageUriString == imageUri) {
+                            updatedUris.firstOrNull()?.second
+                        } else {
+                            record.beforeImageTimestamp
+                        }
+
+                        val result = record.copy(
+                            beforeImageUris = updatedUris,
+                            beforeImageUriString = newLegacyUri,
+                            beforeImageTimestamp = newLegacyTimestamp,
+                            dateUpdated = System.currentTimeMillis()
+                        )
+
+                        updatedRecord = result
+                        result
+                    } else {
+                        record
+                    }
+                }
+            }
+
+            // Update selected prospect if needed
+            updatedRecord?.let { updateSelectedProspect(it) }
+
+            saveProspectRecords()
+            _snackbarMessage.emit("Before image removed")
+        }
+    }
+
+    fun removeAfterImage(prospectId: String, imageUri: String) {
+        viewModelScope.launch {
+            var updatedRecord: ProspectRecord? = null
+
+            _prospectRecords.update { currentRecords ->
+                currentRecords.map { record ->
+                    if (record.id == prospectId) {
+                        val updatedUris = record.afterImageUris.filterNot { it.first == imageUri }
+
+                        // Update legacy fields if needed
+                        val newLegacyUri = if (record.afterImageUriString == imageUri) {
+                            updatedUris.firstOrNull()?.first
+                        } else {
+                            record.afterImageUriString
+                        }
+
+                        val newLegacyTimestamp = if (record.afterImageUriString == imageUri) {
+                            updatedUris.firstOrNull()?.second
+                        } else {
+                            record.afterImageTimestamp
+                        }
+
+                        val result = record.copy(
+                            afterImageUris = updatedUris,
+                            afterImageUriString = newLegacyUri,
+                            afterImageTimestamp = newLegacyTimestamp,
+                            dateUpdated = System.currentTimeMillis()
+                        )
+
+                        updatedRecord = result
+                        result
+                    } else {
+                        record
+                    }
+                }
+            }
+
+            // Update selected prospect if needed
+            updatedRecord?.let { updateSelectedProspect(it) }
+
+            saveProspectRecords()
+            _snackbarMessage.emit("After image removed")
+        }
+    }
+
+
+
+    private lateinit var imagePickerLauncher: ActivityResultLauncher<Array<String>>
+    private var currentImageUploadInfo: Pair<String, Boolean>? = null // Pair<ProspectId, IsBeforeImage>
+
 
     // =============================================
     // Core UI State
@@ -1167,7 +1339,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // =============================================
     // Persistence
     // =============================================
-
+    private fun updateSelectedProspect(updatedProspect: ProspectRecord) {
+        // Update the selected prospect if it's the one being modified
+        if (_selectedProspectRecord.value?.id == updatedProspect.id) {
+            _selectedProspectRecord.value = updatedProspect
+        }
+    }
     private fun saveCatalogs() {
         val catalogsToSave = _catalogs.value
         viewModelScope.launch(Dispatchers.IO) {
@@ -1238,7 +1415,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
-
     private fun loadProspectRecords() {
         viewModelScope.launch(Dispatchers.IO) {
             val file = File(appContext.filesDir, PROSPECTS_FILE_NAME)
@@ -1250,13 +1426,49 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     // Try loading with the new Note structure first
                     try {
                         val loadedRecords: List<ProspectRecord> = json.decodeFromString(jsonString)
+
+                        // Migrate image data after loading
+                        val migratedRecords = loadedRecords.map { record ->
+                            val updatedRecord = record.copy()
+
+                            // Migrate single images to lists if needed
+                            val beforeImages = mutableListOf<Pair<String, Long>>()
+                            val afterImages = mutableListOf<Pair<String, Long>>()
+
+                            // Add legacy "before" image if it exists and list is empty
+                            if (updatedRecord.beforeImageUriString != null &&
+                                updatedRecord.beforeImageTimestamp != null &&
+                                updatedRecord.beforeImageUris.isEmpty()) {
+                                beforeImages.add(Pair(updatedRecord.beforeImageUriString!!,
+                                    updatedRecord.beforeImageTimestamp!!))
+                            }
+
+                            // Add legacy "after" image if it exists and list is empty
+                            if (updatedRecord.afterImageUriString != null &&
+                                updatedRecord.afterImageTimestamp != null &&
+                                updatedRecord.afterImageUris.isEmpty()) {
+                                afterImages.add(Pair(updatedRecord.afterImageUriString!!,
+                                    updatedRecord.afterImageTimestamp!!))
+                            }
+
+                            // Update with migrated data if necessary
+                            if (beforeImages.isNotEmpty() || afterImages.isNotEmpty()) {
+                                updatedRecord.copy(
+                                    beforeImageUris = updatedRecord.beforeImageUris + beforeImages,
+                                    afterImageUris = updatedRecord.afterImageUris + afterImages
+                                )
+                            } else {
+                                updatedRecord
+                            }
+                        }
+
                         withContext(Dispatchers.Main) {
-                            _prospectRecords.value = loadedRecords
-                            Log.i(TAG, "[LOAD_PROSPECTS] ${loadedRecords.size} prospect records loaded.")
+                            _prospectRecords.value = migratedRecords
+                            Log.i(TAG, "[LOAD_PROSPECTS] ${migratedRecords.size} prospect records loaded and migrated.")
                         }
                     } catch (e: Exception) {
-                        // If that fails, attempt migration from old string-based notes
-                        Log.w(TAG, "[LOAD_PROSPECTS] Error loading with new Note structure, attempting migration", e)
+                        // Handle migration from old format
+                        Log.w(TAG, "[LOAD_PROSPECTS] Error loading with new structure, attempting migration", e)
                         migrateOldProspectRecords(jsonString)
                     }
                 } catch (e: Exception) {

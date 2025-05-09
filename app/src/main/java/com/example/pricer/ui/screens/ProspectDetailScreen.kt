@@ -1,6 +1,11 @@
 package com.example.pricer.ui.screens
 
 import android.content.ActivityNotFoundException
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Shape
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -44,6 +49,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.platform.LocalContext
+import coil.compose.rememberAsyncImagePainter
+import coil.request.ImageRequest
+
 /**
  * Screen for viewing and managing details of a single prospect/customer.
  * Displays contact info, notes, and provides actions like sharing PDFs and changing status.
@@ -58,7 +75,6 @@ fun ProspectDetailScreen(
     val context = LocalContext.current
     val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy 'at' HH:mm", Locale.getDefault()) }
     val fileProviderAuthority = "${context.packageName}.fileprovider"
-
     var showDeleteConfirmation by remember { mutableStateOf(false) }
     Scaffold(
         topBar = {
@@ -301,6 +317,161 @@ fun ProspectDetailScreen(
                     )
                     Spacer(Modifier.size(ButtonDefaults.IconSpacing))
                     Text(if (hasReminder) "Edit Reminder" else "Set Reminder")
+                }
+                // --- Images Section ---
+                SectionTitle("Project Images")
+
+                val hasBeforeImages = !prospect.beforeImageUris.isNullOrEmpty()
+                val hasAfterImages = !prospect.afterImageUris.isNullOrEmpty()
+
+// Before Images Section
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Before Images",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        Button(
+                            onClick = { viewModel.requestBeforeImageUpload(prospect.id) },
+                            modifier = Modifier.padding(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "Add before image",
+                                modifier = Modifier.size(ButtonDefaults.IconSize)
+                            )
+                            Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                            Text("Add Image")
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    if (hasBeforeImages) {
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp)
+                        ) {
+                            items(prospect.beforeImageUris) { (uri, timestamp) ->
+                                ProjectImageItem(
+                                    imageUri = uri,
+                                    timestamp = timestamp,
+                                    onRemoveClick = { viewModel.removeBeforeImage(prospect.id, uri) }
+                                )
+                            }
+                        }
+                    } else {
+                        // Placeholder when no images
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(150.dp)
+                                .border(
+                                    width = 1.dp,
+                                    color = MaterialTheme.colorScheme.outline,
+                                    shape = MaterialTheme.shapes.medium
+                                )
+                                .clip(MaterialTheme.shapes.medium),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(
+                                    imageVector = Icons.Default.PhotoLibrary,
+                                    contentDescription = "No before images",
+                                    modifier = Modifier.size(48.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                )
+                                Text(
+                                    text = "No Images Added",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                    modifier = Modifier.padding(top = 8.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+// After Images Section
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "After Images",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        Button(
+                            onClick = { viewModel.requestAfterImageUpload(prospect.id) },
+                            modifier = Modifier.padding(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "Add after image",
+                                modifier = Modifier.size(ButtonDefaults.IconSize)
+                            )
+                            Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                            Text("Add Image")
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    if (hasAfterImages) {
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp)
+                        ) {
+                            items(prospect.afterImageUris) { (uri, timestamp) ->
+                                ProjectImageItem(
+                                    imageUri = uri,
+                                    timestamp = timestamp,
+                                    onRemoveClick = { viewModel.removeAfterImage(prospect.id, uri) }
+                                )
+                            }
+                        }
+                    } else {
+                        // Placeholder when no images
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(150.dp)
+                                .border(
+                                    width = 1.dp,
+                                    color = MaterialTheme.colorScheme.outline,
+                                    shape = MaterialTheme.shapes.medium
+                                )
+                                .clip(MaterialTheme.shapes.medium),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(
+                                    imageVector = Icons.Default.PhotoLibrary,
+                                    contentDescription = "No after images",
+                                    modifier = Modifier.size(48.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                )
+                                Text(
+                                    text = "No Images Added",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                    modifier = Modifier.padding(top = 8.dp)
+                                )
+                            }
+                        }
+                    }
                 }
                 // --- Actions Section ---
                 SectionTitle("Actions")
@@ -678,5 +849,75 @@ private fun openPdf(context: Context, pdfUriString: String?, authority: String, 
     } catch (e: Exception) {
         Log.e("ProspectDetailScreen", "Error opening PDF: $pdfUriString", e)
         Toast.makeText(context, "Could not open PDF: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+    }
+}@Composable
+private fun ProjectImageItem(
+    imageUri: String,
+    timestamp: Long?,
+    onRemoveClick: () -> Unit
+) {
+    val dateFormat = remember { SimpleDateFormat("MMM dd", Locale.getDefault()) }
+    val formattedDate = timestamp?.let { remember(it) { dateFormat.format(Date(it)) } }
+
+    Box(
+        modifier = Modifier
+            .width(150.dp)
+            .height(200.dp)
+    ) {
+        // Image
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(150.dp)
+                .clip(MaterialTheme.shapes.medium)
+                .border(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.outline,
+                    shape = MaterialTheme.shapes.medium
+                )
+        ) {
+            Image(
+                painter = rememberAsyncImagePainter(
+                    ImageRequest.Builder(LocalContext.current)
+                        .data(Uri.parse(imageUri))
+                        .build()
+                ),
+                contentDescription = "Project image",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        }
+
+        // Date text
+        if (formattedDate != null) {
+            Text(
+                text = formattedDate,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .padding(top = 156.dp)
+                    .align(Alignment.TopCenter)
+            )
+        }
+
+        // Remove button
+        IconButton(
+            onClick = onRemoveClick,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(4.dp)
+                .size(28.dp)
+                .background(
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
+                    shape = CircleShape
+                )
+        ) {
+            Icon(
+                imageVector = Icons.Default.Clear,
+                contentDescription = "Remove image",
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.error
+            )
+        }
     }
 }

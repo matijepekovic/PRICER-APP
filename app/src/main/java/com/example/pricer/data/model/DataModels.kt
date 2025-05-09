@@ -102,9 +102,17 @@ data class ProspectRecord(
     val quoteSnapshot: Quote,
     val externalPdfUriString: String?,
     var status: ProspectStatus = ProspectStatus.PROSPECT,
-    var notes: List<Note> = emptyList(), // Changed from List<String> to List<Note>
+    var notes: List<Note> = emptyList(),
     var reminderDateTime: Long? = null,
     var reminderNote: String? = null,
+    // Add these properties for multiple images
+    var beforeImageUris: List<Pair<String, Long>> = emptyList(),
+    var afterImageUris: List<Pair<String, Long>> = emptyList(),
+    // Keep old properties for backward compatibility
+    var beforeImageUriString: String? = null,
+    var afterImageTimestamp: Long? = null,
+    var beforeImageTimestamp: Long? = null,
+    var afterImageUriString: String? = null,
     val dateCreated: Long = System.currentTimeMillis(),
     var dateUpdated: Long = System.currentTimeMillis()
 )

@@ -35,6 +35,7 @@ class ReminderReceiver : BroadcastReceiver() {
 
         // Request code for main activity intent
         private const val NOTIFICATION_REQUEST_CODE = 1001
+        private const val STORAGE_PERMISSION_CODE = 101 // Add this line
     }
 
     override fun onReceive(context: Context, intent: Intent) {
