@@ -835,7 +835,7 @@ class MainActivity : ComponentActivity() {
                     viewModel = viewModel,
                     onNavigateBack = { viewModel.showContactsScreen() }
                 )
-                UiMode.SUBCONTRACTORS -> SubcontractorsScreen( // Add this case
+                UiMode.SUBCONTRACTORS -> SubcontractorsScreen(
                     viewModel = viewModel,
                     onNavigateBack = { viewModel.showCatalogView() }
                 )
@@ -877,11 +877,11 @@ class MainActivity : ComponentActivity() {
             }
 
             DialogState.ASSIGN_SUBCONTRACTOR -> {
-                val prospect = selectedProspect // Use the variable that's already defined properly
-                val subcontractors by viewModel.subcontractors.collectAsStateWithLifecycle()
-                val phases by viewModel.globalPhases.collectAsStateWithLifecycle()
+                val prospect = selectedProspect
+                if (prospect != null) {
+                    val subcontractors by viewModel.subcontractors.collectAsStateWithLifecycle()
+                    val phases by viewModel.globalPhases.collectAsStateWithLifecycle()
 
-                if (prospect != null) { // Use safe null check instead of smart cast
                     AssignSubcontractorDialog(
                         subcontractors = subcontractors,
                         phases = phases,

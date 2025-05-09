@@ -14,6 +14,7 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.runtime.compositionLocalOf
 import androidx.core.content.FileProvider
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.AndroidViewModel
@@ -53,7 +54,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // =============================================
     // Constants & Basic Configuration
     // =============================================
+    // Add these functions to your MainViewModel.kt class
 
+
+    private val LocalProspectDetailViewModel = compositionLocalOf<MainViewModel> {
+        error("No MainViewModel provided")
+    }
     private companion object {
         const val TAG = "MainViewModel"
         const val DEFAULT_CATALOG_ID = "default_catalog_001"
@@ -657,32 +663,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         saveProspectRecords()
     }
 
-    fun removePhaseImage(prospectId: String, phaseId: String, imageUri: String) {
-        _prospectRecords.update { records ->
-            records.map { record ->
-                if (record.id == prospectId) {
-                    // Update the phase images
-                    val updatedPhaseImages = record.phaseImages.map { phaseImage ->
-                        if (phaseImage.phaseId == phaseId) {
-                            phaseImage.copy(
-                                imageUris = phaseImage.imageUris.filterNot { it.first == imageUri }
-                            )
-                        } else {
-                            phaseImage
-                        }
-                    }.filter { it.imageUris.isNotEmpty() } // Remove empty entries
-
-                    record.copy(
-                        phaseImages = updatedPhaseImages,
-                        dateUpdated = System.currentTimeMillis()
-                    )
-                } else {
-                    record
-                }
-            }
-        }
-        saveProspectRecords()
-    }
 
     // Methods for subcontractor assignments
     fun updateSubcontractorAssignments(prospectId: String, assignments: List<SubcontractorAssignment>) {
@@ -2154,6 +2134,87 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _productMultiplierAssignments.value = emptyMap()
             Log.i(TAG, "Initialized with default catalog.")
             saveCatalogs()
+        }
+    }
+    fun requestPhaseImageUpload(prospectId: String, phaseId: String) {
+        viewModelScope.launch {
+            _imageUploadEvent.emit(Pair("${prospectId}:${phaseId}", true))
+        }
+    }
+
+    // Add this function to handle phase image upload
+    fun savePhaseImage(prospectId: String, phaseId: String, imageUri: Uri) {
+        viewModelScope.launch {
+            val timestamp = System.currentTimeMillis()
+
+            _prospectRecords.update { currentRecords ->
+                currentRecords.map { record ->
+                    if (record.id == prospectId) {
+                        // Find existing phase image entry or create new one
+                        val existingEntry = record.phaseImages.find { it.phaseId == phaseId }
+
+                        val updatedPhaseImages = if (existingEntry != null) {
+                            // Update existing entry
+                            record.phaseImages.map {
+                                if (it.phaseId == phaseId) {
+                                    it.copy(imageUris = it.imageUris + Pair(imageUri.toString(), timestamp))
+                                } else {
+                                    it
+                                }
+                            }
+                        } else {
+                            // Create new entry
+                            record.phaseImages + PhaseImage(
+                                phaseId = phaseId,
+                                imageUris = listOf(Pair(imageUri.toString(), timestamp))
+                            )
+                        }
+
+                        record.copy(
+                            phaseImages = updatedPhaseImages,
+                            dateUpdated = timestamp
+                        )
+                    } else {
+                        record
+                    }
+                }
+            }
+
+            saveProspectRecords()
+            _snackbarMessage.emit("Phase image added successfully")
+        }
+    }
+
+
+    // Add this function to remove phase image
+    fun removePhaseImage(prospectId: String, phaseId: String, imageUri: String) {
+        viewModelScope.launch {
+            _prospectRecords.update { currentRecords ->
+                currentRecords.map { record ->
+                    if (record.id == prospectId) {
+                        // Update the phase images
+                        val updatedPhaseImages = record.phaseImages.map { phaseImage ->
+                            if (phaseImage.phaseId == phaseId) {
+                                phaseImage.copy(
+                                    imageUris = phaseImage.imageUris.filterNot { it.first == imageUri }
+                                )
+                            } else {
+                                phaseImage
+                            }
+                        }.filter { it.imageUris.isNotEmpty() } // Remove empty entries
+
+                        record.copy(
+                            phaseImages = updatedPhaseImages,
+                            dateUpdated = System.currentTimeMillis()
+                        )
+                    } else {
+                        record
+                    }
+                }
+            }
+
+            saveProspectRecords()
+            _snackbarMessage.emit("Phase image removed")
         }
     }
 }
