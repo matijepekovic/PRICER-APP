@@ -1,5 +1,8 @@
 package com.example.pricer.ui.screens
-
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.People
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
@@ -285,7 +288,99 @@ fun ProspectDetailScreen(
                 Divider()
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // --- Project Phases Section ---
+
+                // --- Subcontractors Section ---
+                Spacer(modifier = Modifier.height(16.dp))
+                Divider()
+                Spacer(modifier = Modifier.height(16.dp))
+
+                SectionTitle("Subcontractors")
+
+// Show assigned subcontractors or empty state
+                if (prospect.subcontractorAssignments.isEmpty()) {
+                    // Empty state
+                    Text(
+                        "No subcontractors assigned to this project.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    // List of assigned subcontractors
+                    Column(modifier = Modifier.padding(start = 8.dp)) {
+                        prospect.subcontractorAssignments.forEach { assignment ->
+                            // Find the subcontractor by ID
+                            val subcontractor = subcontractors.find { sub -> sub.id == assignment.subcontractorId }
+
+                            if (subcontractor != null) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // Subcontractor info
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = subcontractor.name,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+
+                                        // Specialty or role
+                                        if (subcontractor.specialty.isNotBlank()) {
+                                            Text(
+                                                text = subcontractor.specialty,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+
+                                        // Show phase assignment if any
+                                        if (assignment.phaseId != null) {
+                                            Text(
+                                                text = "Assigned to specific phase",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                        } else {
+                                            Text(
+                                                text = "Assigned to all phases",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                    }
+
+                                    // Remove button
+                                    IconButton(onClick = {
+                                        viewModel.removeSubcontractorAssignment(prospect.id, assignment)
+                                    }) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Remove Subcontractor",
+                                            tint = MaterialTheme.colorScheme.error
+                                        )
+                                    }
+                                }
+                                Divider(modifier = Modifier.padding(vertical = 4.dp))
+                            }
+                        }
+                    }
+                }
+
+// Button to assign subcontractors
+                OutlinedButton(
+                    onClick = { viewModel.showDialog(DialogState.ASSIGN_SUBCONTRACTOR) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PersonAdd,
+                        contentDescription = null,
+                        modifier = Modifier.size(ButtonDefaults.IconSize)
+                    )
+                    Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                    Text("Assign Subcontractors")
+                }
                 // --- Project Phases Section ---
                 SectionTitle("Project Phases")
 
@@ -508,6 +603,8 @@ fun ProspectDetailScreen(
                         Text("Delete Record")
                     }
                 }
+
+            }
             }
         }
 
@@ -538,12 +635,71 @@ fun ProspectDetailScreen(
             )
         }
     }
-}
+
 
 // ===========================================
 // Helper Composables
 // ===========================================
+@Composable
+private fun SubcontractorItem(
+    subcontractor: Subcontractor,
+    phaseName: String?,
+    onViewDetails: () -> Unit,
+    onRemove: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Subcontractor info
+        Column(modifier = Modifier.weight(1f)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clickable(onClick = onViewDetails)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Person,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = subcontractor.name,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
 
+            // Specialty or role
+            if (subcontractor.specialty.isNotBlank()) {
+                Text(
+                    text = subcontractor.specialty,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            // Assigned phase
+            Text(
+                text = "Working on: $phaseName",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+
+        // Remove button
+        IconButton(onClick = onRemove) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Remove Subcontractor",
+                tint = MaterialTheme.colorScheme.error
+            )
+        }
+    }
+}
 @Composable
 private fun NoteItem(
     note: Note,

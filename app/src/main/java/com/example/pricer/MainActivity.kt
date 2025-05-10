@@ -921,7 +921,24 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             }
+            DialogState.ASSIGN_SUBCONTRACTOR -> {
+                val prospect = selectedProspect
+                if (prospect != null) {
+                    val subcontractors by viewModel.subcontractors.collectAsStateWithLifecycle()
+                    val phases by viewModel.globalPhases.collectAsStateWithLifecycle()
 
+                    AssignSubcontractorDialog(
+                        subcontractors = subcontractors,
+                        phases = phases,
+                        currentAssignments = prospect.subcontractorAssignments,
+                        onDismiss = { viewModel.dismissDialog() },
+                        onSave = {
+                            viewModel.updateSubcontractorAssignments(prospect.id, it)
+                            viewModel.dismissDialog()
+                        }
+                    )
+                }
+            }
             DialogState.ADD_TASK -> {
                 val taskPhaseId = viewModel.taskPhaseId.collectAsStateWithLifecycle().value
                 val selectedProspect = viewModel.selectedProspectRecord.collectAsStateWithLifecycle().value

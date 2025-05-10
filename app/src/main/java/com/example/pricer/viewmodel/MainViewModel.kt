@@ -443,7 +443,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val phaseToEdit: StateFlow<Phase?> = _phaseToEdit.asStateFlow()
     private val _importConfirmEvent = MutableSharedFlow<Catalog>()
     val importConfirmEvent: SharedFlow<Catalog> = _importConfirmEvent.asSharedFlow()
-
+    private val _taskToEdit = MutableStateFlow<Task?>(null)
+    val taskToEdit: StateFlow<Task?> = _taskToEdit.asStateFlow()
     private val _nameConflictEvent = MutableSharedFlow<Pair<Catalog, String>>()
     val nameConflictEvent: SharedFlow<Pair<Catalog, String>> = _nameConflictEvent.asSharedFlow()
     private val _noteToEdit = MutableStateFlow<Note?>(null)
@@ -836,7 +837,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+    // Function to navigate to subcontractor details
+    fun showSubcontractorDetails(subcontractorId: String) {
+        // This could navigate to a subcontractor detail screen
+        // For now, it just shows a snackbar with the info
+        viewModelScope.launch {
+            val subcontractor = _subcontractors.value.find { it.id == subcontractorId }
+            if (subcontractor != null) {
+                _snackbarMessage.emit("Subcontractor: ${subcontractor.name}, Phone: ${subcontractor.phone}")
+            }
+        }
+    }
 
+    // Function to remove a subcontractor assignment
+    fun removeSubcontractorAssignment(prospectId: String, assignmentToRemove: SubcontractorAssignment) {
+        _prospectRecords.update { records ->
+            records.map { record ->
+                if (record.id == prospectId) {
+                    val updatedAssignments = record.subcontractorAssignments.filter {
+                        it.subcontractorId != assignmentToRemove.subcontractorId ||
+                                it.phaseId != assignmentToRemove.phaseId
+                    }
+                    record.copy(
+                        subcontractorAssignments = updatedAssignments,
+                        dateUpdated = System.currentTimeMillis()
+                    )
+                } else {
+                    record
+                }
+            }
+        }
+        saveProspectRecords()
+
+        viewModelScope.launch {
+            _snackbarMessage.emit("Subcontractor assignment removed")
+        }
+    }
     private fun loadSubcontractors() {
         viewModelScope.launch(Dispatchers.IO) {
             val file = File(appContext.filesDir, "subcontractors.json")
@@ -1925,9 +1961,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // =============================================
     // Persistence
     // =============================================
-    private fun updateSelectedProspect(updatedProspect: ProspectRecord) {
-        // Update the selected prospect if it's the one being modified
-        if (_selectedProspectRecord.value?.id == updatedProspect.id) {
+    private fun updateSelectedProspect(updatedProspect: ProspectRecord?) {
+        // Update the selected prospect if it's the one being modified and not null
+        if (updatedProspect != null && _selectedProspectRecord.value?.id == updatedProspect.id) {
             _selectedProspectRecord.value = updatedProspect
         }
     }

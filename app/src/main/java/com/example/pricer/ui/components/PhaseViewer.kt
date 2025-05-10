@@ -1,13 +1,20 @@
 package com.example.pricer.ui.components
 
+import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -31,6 +38,8 @@ import com.example.pricer.data.model.Phase
 import com.example.pricer.data.model.PhaseStatus
 import com.example.pricer.data.model.Task
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.clickable
+import androidx.compose.material.ripple.rememberRipple
 
 /**
  * A swipeable phase viewer component that shows one phase at a time
@@ -212,14 +221,13 @@ fun PhaseCard(
                     }
                 }
 
-                // Status toggle
+                // Status toggle - using a Button for better touch feedback
                 PhaseStatusSelector(
                     currentStatus = phase.status,
                     onStatusChange = onToggleStatus
                 )
-
-                // Removed the edit pen icon as requested
             }
+
 
             Divider(modifier = Modifier.padding(vertical = 12.dp))
 
@@ -338,7 +346,7 @@ fun EmptyPhasesState(onAddPhase: () -> Unit) {
 }
 
 @Composable
-fun PhaseStatusSelector(
+private fun PhaseStatusSelector(
     currentStatus: PhaseStatus,
     onStatusChange: (PhaseStatus) -> Unit
 ) {
@@ -348,92 +356,33 @@ fun PhaseStatusSelector(
         PhaseStatus.COMPLETED -> MaterialTheme.colorScheme.tertiary
     }
 
-    Column(
-        horizontalAlignment = Alignment.End
+    // Status display that is also a button
+    Button(
+        onClick = {
+            // Cycle to the next status when clicked
+            val nextStatus = when(currentStatus) {
+                PhaseStatus.NOT_STARTED -> PhaseStatus.IN_PROGRESS
+                PhaseStatus.IN_PROGRESS -> PhaseStatus.COMPLETED
+                PhaseStatus.COMPLETED -> PhaseStatus.NOT_STARTED
+            }
+            onStatusChange(nextStatus)
+        },
+        colors = ButtonDefaults.buttonColors(
+            containerColor = statusColor.copy(alpha = 0.15f),
+            contentColor = statusColor
+        ),
+        shape = MaterialTheme.shapes.small,
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+        border = BorderStroke(1.dp, statusColor.copy(alpha = 0.3f))
     ) {
-        Box(
-            modifier = Modifier
-                .clip(MaterialTheme.shapes.small)
-                .background(statusColor.copy(alpha = 0.12f))
-                .border(
-                    width = 1.dp,
-                    color = statusColor.copy(alpha = 0.3f),
-                    shape = MaterialTheme.shapes.small
-                )
-                .padding(horizontal = 8.dp, vertical = 4.dp)
-        ) {
-            Text(
-                text = when(currentStatus) {
-                    PhaseStatus.NOT_STARTED -> "Not Started"
-                    PhaseStatus.IN_PROGRESS -> "In Progress"
-                    PhaseStatus.COMPLETED -> "Completed"
-                },
-                style = MaterialTheme.typography.labelMedium,
-                color = statusColor
-            )
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Status toggle menu
-        var expanded by remember { mutableStateOf(false) }
-
-        Box {
-            IconButton(onClick = { expanded = true }) {
-                Icon(
-                    imageVector = Icons.Default.ArrowDropDown,
-                    contentDescription = "Change Status"
-                )
-            }
-
-            DropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false }
-            ) {
-                PhaseStatus.values().forEach { status ->
-                    DropdownMenuItem(
-                        text = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(12.dp)
-                                        .clip(CircleShape)
-                                        .background(
-                                            when(status) {
-                                                PhaseStatus.NOT_STARTED -> MaterialTheme.colorScheme.error
-                                                PhaseStatus.IN_PROGRESS -> MaterialTheme.colorScheme.primary
-                                                PhaseStatus.COMPLETED -> MaterialTheme.colorScheme.tertiary
-                                            }
-                                        )
-                                )
-
-                                Spacer(modifier = Modifier.width(8.dp))
-
-                                Text(
-                                    text = when(status) {
-                                        PhaseStatus.NOT_STARTED -> "Not Started"
-                                        PhaseStatus.IN_PROGRESS -> "In Progress"
-                                        PhaseStatus.COMPLETED -> "Completed"
-                                    }
-                                )
-                            }
-                        },
-                        leadingIcon = if (status == currentStatus) {
-                            {
-                                Icon(
-                                    imageVector = Icons.Default.Check,
-                                    contentDescription = null
-                                )
-                            }
-                        } else null,
-                        onClick = {
-                            onStatusChange(status)
-                            expanded = false
-                        }
-                    )
-                }
-            }
-        }
+        Text(
+            text = when(currentStatus) {
+                PhaseStatus.NOT_STARTED -> "Not Started"
+                PhaseStatus.IN_PROGRESS -> "In Progress"
+                PhaseStatus.COMPLETED -> "Completed"
+            },
+            style = MaterialTheme.typography.labelMedium
+        )
     }
 }
 @Composable
