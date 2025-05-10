@@ -59,6 +59,7 @@ fun ProspectDetailScreen(
     val subcontractors by viewModel.subcontractors.collectAsStateWithLifecycle()
     val selectedProspect by viewModel.selectedProspectRecord.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val tasksKey = remember(selectedProspect?.tasks) { selectedProspect?.tasks?.hashCode() ?: 0 }
     val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy 'at' HH:mm", Locale.getDefault()) }
     val fileProviderAuthority = "${context.packageName}.fileprovider"
     var showDeleteConfirmation by remember { mutableStateOf(false) }
@@ -285,30 +286,11 @@ fun ProspectDetailScreen(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // --- Project Phases Section ---
+                // --- Project Phases Section ---
                 SectionTitle("Project Phases")
 
-                val coroutineScope = rememberCoroutineScope()
-                val pagerState = rememberPagerState(initialPage = selectedPhaseIndex, pageCount = { globalPhases.size })
-
-                if (globalPhases.isEmpty()) {
-                    Text(
-                        text = "No phases defined yet. Add phases in the management screen.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    OutlinedButton(
-                        onClick = { viewModel.showDialog(DialogState.MANAGE_PHASES) },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.Settings, null, Modifier.size(ButtonDefaults.IconSize))
-                        Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                        Text("Manage Phases")
-                    }
-                } else {
-                    // Use the new PhaseViewer component
+// Use the updated PhaseViewer component
+                key(tasksKey, globalPhases, selectedPhaseIndex) {
                     PhaseViewer(
                         phases = globalPhases,
                         tasks = prospect.tasks,
@@ -317,51 +299,35 @@ fun ProspectDetailScreen(
                             viewModel.setSelectedPhaseIndex(newIndex)
                         },
                         onTogglePhaseStatus = { phaseId, newStatus ->
-                            // Add this method to your MainViewModel
                             viewModel.updatePhaseStatus(prospect.id, phaseId, newStatus)
                         },
                         onAddTask = { phaseId ->
-                            // Add this method to your MainViewModel
                             viewModel.showAddTaskDialog(phaseId)
                         },
                         onTaskStatusChange = { taskId, isCompleted ->
                             viewModel.toggleTaskCompletion(prospect.id, taskId)
                         },
+                        onEditTask = { taskId ->
+                            viewModel.showEditTaskDialog(taskId)
+                        },
+                        onDeleteTask = { taskId ->
+                            viewModel.deleteTask(prospect.id, taskId)
+                        },
                         onEditPhase = { phase ->
-                            // Add this method to your MainViewModel
                             viewModel.showEditPhaseDialog(phase)
+                        },
+                        onManagePhases = {
+                            viewModel.showManagePhasesDialog()
+                        },
+                        onAddPhase = {
+                            viewModel.showAddPhaseDialog()
                         }
                     )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        OutlinedButton(
-                            onClick = { viewModel.showDialog(DialogState.MANAGE_PHASES) }
-                        ) {
-                            Text("Manage Phases")
-                        }
-
-                        OutlinedButton(
-                            onClick = { viewModel.showDialog(DialogState.ASSIGN_SUBCONTRACTOR) }
-                        ) {
-                            Text("Assign Subcontractors")
-                        }
-                    }
+                    // --- Images Section ---
+                    SectionTitle("Project Images")
                 }
-
-                Spacer(modifier = Modifier.height(16.dp))
-                Divider()
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // --- Images Section ---
-                SectionTitle("Project Images")
-
-                val hasBeforeImages = prospect.beforeImageUris.isNotEmpty()
-                val hasAfterImages = prospect.afterImageUris.isNotEmpty()
+                    val hasBeforeImages = prospect.beforeImageUris.isNotEmpty()
+                    val hasAfterImages = prospect.afterImageUris.isNotEmpty()
 
                 // Before Images Section
                 Column(modifier = Modifier.fillMaxWidth()) {

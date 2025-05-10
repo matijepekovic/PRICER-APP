@@ -865,13 +865,91 @@ class MainActivity : ComponentActivity() {
 
         when(dialogState) {
             DialogState.NONE -> {}
+            DialogState.EDIT_TASK -> {
+                val taskToEdit = viewModel.taskToEdit.collectAsStateWithLifecycle().value
+                val selectedProspect = viewModel.selectedProspectRecord.collectAsStateWithLifecycle().value
+
+                if (taskToEdit != null && selectedProspect != null) {
+                    EditTaskDialog(
+                        task = taskToEdit,
+                        onDismiss = { viewModel.dismissDialog() },
+                        onSave = { updatedTask ->
+                            viewModel.updateTask(selectedProspect.id, updatedTask)
+                            viewModel.dismissDialog()
+                        }
+                    )
+                } else {
+                    // If either value is null, dismiss the dialog
+                    LaunchedEffect(Unit) {
+                        viewModel.dismissDialog()
+                    }
+                }
+            }
 
             DialogState.MANAGE_PHASES -> {
                 val phases by viewModel.globalPhases.collectAsStateWithLifecycle()
 
-
+                ManagePhasesDialog(
+                    phases = phases,
+                    onDismiss = { viewModel.dismissDialog() },
+                    onSavePhases = { viewModel.saveGlobalPhases(it) },
+                    onEditPhase = { viewModel.showEditPhaseDialog(it) },
+                    onDeletePhase = { viewModel.deletePhase(it) }
+                )
+            }
+            DialogState.ADD_PHASE -> {
+                AddEditPhaseDialog(
+                    phase = null,
+                    onDismiss = { viewModel.dismissDialog() },
+                    onSave = {
+                        viewModel.addPhase(it)
+                        viewModel.dismissDialog()
+                    }
+                )
             }
 
+            DialogState.EDIT_PHASE -> {
+                val phaseToEdit by viewModel.phaseToEdit.collectAsStateWithLifecycle()
+                if (phaseToEdit != null) {
+                    AddEditPhaseDialog(
+                        phase = phaseToEdit,
+                        onDismiss = { viewModel.dismissDialog() },
+                        onSave = {
+                            viewModel.updatePhase(it)
+                            viewModel.dismissDialog()
+                        }
+                    )
+                }
+            }
+
+            DialogState.ADD_TASK -> {
+                val taskPhaseId = viewModel.taskPhaseId.collectAsStateWithLifecycle().value
+                val selectedProspect = viewModel.selectedProspectRecord.collectAsStateWithLifecycle().value
+
+                if (taskPhaseId != null && selectedProspect != null) {
+                    // Log to verify values are correct
+                    Log.d("MainActivity", "Showing AddTaskDialog with phaseId: $taskPhaseId for prospect: ${selectedProspect.id}")
+
+                    AddTaskDialog(
+                        phaseId = taskPhaseId,
+                        onDismiss = { viewModel.dismissDialog() },
+                        onAddTask = { task ->
+                            // Log the task before adding
+                            Log.d("MainActivity", "Adding task: ${task.title} with phaseId: ${task.phaseId} to prospect: ${selectedProspect.id}")
+                            viewModel.addTask(selectedProspect.id, task)
+                            viewModel.dismissDialog()
+                        }
+                    )
+                } else {
+                    // Log the issue
+                    Log.e("MainActivity", "Cannot show AddTaskDialog: taskPhaseId=$taskPhaseId, selectedProspect=${selectedProspect?.id}")
+
+                    // If either value is null, dismiss the dialog
+                    LaunchedEffect(Unit) {
+                        viewModel.dismissDialog()
+                    }
+                }
+            }
             DialogState.ASSIGN_SUBCONTRACTOR -> {
                 val prospect = selectedProspect
                 if (prospect != null) {

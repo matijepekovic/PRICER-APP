@@ -4,11 +4,15 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -26,13 +30,13 @@ import androidx.compose.ui.window.Dialog
 import com.example.pricer.data.model.Phase
 import com.example.pricer.data.model.PhaseStatus
 import com.example.pricer.data.model.Task
-import com.example.pricer.viewmodel.MainViewModel
+import kotlinx.coroutines.launch
 
 /**
  * A swipeable phase viewer component that shows one phase at a time
  * with the ability to swipe between phases and toggle their status.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun PhaseViewer(
     phases: List<Phase>,
@@ -42,142 +46,194 @@ fun PhaseViewer(
     onTogglePhaseStatus: (String, PhaseStatus) -> Unit,
     onAddTask: (String) -> Unit,
     onTaskStatusChange: (String, Boolean) -> Unit,
-    onEditPhase: (Phase) -> Unit
+    onEditTask: (String) -> Unit,
+    onDeleteTask: (String) -> Unit,
+    onEditPhase: (Phase) -> Unit,
+    onManagePhases: () -> Unit,
+    onAddPhase: () -> Unit
 ) {
     if (phases.isEmpty()) {
         // No phases state
-        EmptyPhasesState(onAddPhase = { /* Show phase creation UI */ })
+        EmptyPhasesState(onAddPhase = onAddPhase)
         return
     }
 
-    val currentPhase = phases.getOrNull(currentPhaseIndex) ?: return
+    val coroutineScope = rememberCoroutineScope()
+    val pagerState = rememberPagerState(
+        initialPage = currentPhaseIndex.coerceIn(0, phases.size - 1),
+        pageCount = { phases.size }
+    )
 
-    Box(modifier = Modifier.fillMaxWidth()) {
-        // Phase navigation indicators
+    // When pager state changes, notify the parent
+    LaunchedEffect(pagerState.currentPage) {
+        if (pagerState.currentPage != currentPhaseIndex) {
+            onPhaseSwipe(pagerState.currentPage)
+        }
+    }
+
+    // When currentPhaseIndex changes from parent, update pager
+    LaunchedEffect(currentPhaseIndex) {
+        if (currentPhaseIndex in 0 until phases.size &&
+            currentPhaseIndex != pagerState.currentPage) {
+            pagerState.animateScrollToPage(currentPhaseIndex)
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        // Title with phase count and management button
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // Previous phase button
-            IconButton(
-                onClick = {
-                    if (currentPhaseIndex > 0) onPhaseSwipe(currentPhaseIndex - 1)
-                },
-                enabled = currentPhaseIndex > 0
-            ) {
-                Icon(
-                    imageVector = Icons.Default.ChevronLeft,
-                    contentDescription = "Previous Phase",
-                    tint = if (currentPhaseIndex > 0)
-                        MaterialTheme.colorScheme.primary
-                    else
-                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-                )
-            }
+            Text(
+                text = "Project Phases",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
 
-            // Phase indicators
-            Row(
-                modifier = Modifier.align(Alignment.CenterVertically),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                phases.forEachIndexed { index, _ ->
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(CircleShape)
-                            .background(
-                                if (index == currentPhaseIndex)
-                                    MaterialTheme.colorScheme.primary
-                                else
-                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-                            )
-                    )
-                }
-            }
-
-            // Next phase button
-            IconButton(
-                onClick = {
-                    if (currentPhaseIndex < phases.size - 1) onPhaseSwipe(currentPhaseIndex + 1)
-                },
-                enabled = currentPhaseIndex < phases.size - 1
-            ) {
+            IconButton(onClick = onManagePhases) {
                 Icon(
-                    imageVector = Icons.Default.ChevronRight,
-                    contentDescription = "Next Phase",
-                    tint = if (currentPhaseIndex < phases.size - 1)
-                        MaterialTheme.colorScheme.primary
-                    else
-                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = "Manage Phases"
                 )
             }
         }
 
-        // Main Phase Card
-        Card(
+        // Phase indicators
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-                .padding(top = 32.dp), // Space for the navigation controls
-            shape = RoundedCornerShape(16.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.Center
         ) {
-            Column(
-                modifier = Modifier.padding(16.dp)
-            ) {
-                // Phase header with name and toggle
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = currentPhase.name,
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Bold
+            phases.forEachIndexed { index, _ ->
+                Box(
+                    modifier = Modifier
+                        .padding(horizontal = 4.dp)
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (index == pagerState.currentPage)
+                                MaterialTheme.colorScheme.primary
+                            else
+                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
                         )
+                )
+            }
+        }
 
-                        if (currentPhase.description.isNotBlank()) {
-                            Text(
-                                text = currentPhase.description,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
+        // Horizontal pager for phases
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxWidth()
+        ) { page ->
+            val phase = phases[page]
+            val phaseTasks = tasks.filter { it.phaseId == phase.id }
 
-                    // Status / Toggle switch
-                    Column(
-                        horizontalAlignment = Alignment.End
-                    ) {
-                        PhaseStatusSelector(
-                            currentStatus = currentPhase.status,
-                            onStatusChange = { newStatus ->
-                                onTogglePhaseStatus(currentPhase.id, newStatus)
-                            }
+            PhaseCard(
+                phase = phase,
+                tasks = phaseTasks,
+                onToggleStatus = { newStatus -> onTogglePhaseStatus(phase.id, newStatus) },
+                onAddTask = { onAddTask(phase.id) },
+                onTaskStatusChange = onTaskStatusChange,
+                onEditTask = onEditTask,
+                onDeleteTask = onDeleteTask,
+                onEditPhase = { onEditPhase(phase) }
+            )
+        }
+
+        // Center add phase button (removed navigation arrows)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            FloatingActionButton(
+                onClick = onAddPhase,
+                modifier = Modifier.size(48.dp),
+                containerColor = MaterialTheme.colorScheme.primaryContainer
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = "Add Phase"
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun PhaseCard(
+    phase: Phase,
+    tasks: List<Task>,
+    onToggleStatus: (PhaseStatus) -> Unit,
+    onAddTask: () -> Unit,
+    onTaskStatusChange: (String, Boolean) -> Unit,
+    onEditTask: (String) -> Unit,
+    onDeleteTask: (String) -> Unit,
+    onEditPhase: () -> Unit
+) {
+    // Add a key to force recomposition when tasks change
+    val tasksKey = remember(tasks) { tasks.hashCode() }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            // Phase header with name and toggle
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = phase.name,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    if (phase.description.isNotBlank()) {
+                        Text(
+                            text = phase.description,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
 
-                Divider(modifier = Modifier.padding(vertical = 12.dp))
-
-                // Tasks section
-                Text(
-                    text = "Tasks",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                // Status toggle
+                PhaseStatusSelector(
+                    currentStatus = phase.status,
+                    onStatusChange = onToggleStatus
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                // Removed the edit pen icon as requested
+            }
 
-                val phaseTasks = remember(tasks, currentPhase.id) {
-                    tasks.filter { task -> task.phaseId == currentPhase.id }
-                }
+            Divider(modifier = Modifier.padding(vertical = 12.dp))
 
-                if (phaseTasks.isEmpty()) {
+            // Tasks section
+            Text(
+                text = "Tasks",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            key(tasksKey) {
+                if (tasks.isEmpty()) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -198,50 +254,44 @@ fun PhaseViewer(
                             .fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        items(phaseTasks, key = { it.id }) { task ->
+                        items(tasks, key = { it.id }) { task ->
                             TaskItem(
                                 task = task,
                                 onStatusChange = { isCompleted ->
                                     onTaskStatusChange(task.id, isCompleted)
+                                },
+                                onEditTask = {
+                                    onEditTask(task.id)
+                                },
+                                onDeleteTask = {
+                                    onDeleteTask(task.id)
                                 }
                             )
                         }
                     }
                 }
+            }
 
-                Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-                // Add task button
-                OutlinedButton(
-                    onClick = { onAddTask(currentPhase.id) },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = null,
-                        modifier = Modifier.size(ButtonDefaults.IconSize)
-                    )
-                    Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                    Text("Add Task to This Phase")
-                }
-
-                // Edit phase button
-                TextButton(
-                    onClick = { onEditPhase(currentPhase) },
-                    modifier = Modifier.align(Alignment.End)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Edit,
-                        contentDescription = null,
-                        modifier = Modifier.size(ButtonDefaults.IconSize)
-                    )
-                    Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                    Text("Edit Phase")
-                }
+            // Add task button
+            OutlinedButton(
+                onClick = onAddTask,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = null,
+                    modifier = Modifier.size(ButtonDefaults.IconSize)
+                )
+                Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                Text("Add Task to This Phase")
             }
         }
     }
 }
+
+
 
 @Composable
 fun EmptyPhasesState(onAddPhase: () -> Unit) {
@@ -331,7 +381,7 @@ fun PhaseStatusSelector(
         Box {
             IconButton(onClick = { expanded = true }) {
                 Icon(
-                    imageVector = Icons.Default.MoreVert,
+                    imageVector = Icons.Default.ArrowDropDown,
                     contentDescription = "Change Status"
                 )
             }
@@ -386,12 +436,15 @@ fun PhaseStatusSelector(
         }
     }
 }
-
 @Composable
 fun TaskItem(
     task: Task,
-    onStatusChange: (Boolean) -> Unit
+    onStatusChange: (Boolean) -> Unit,
+    onEditTask: () -> Unit,
+    onDeleteTask: () -> Unit
 ) {
+    var showOptions by remember { mutableStateOf(false) }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -410,6 +463,7 @@ fun TaskItem(
             modifier = Modifier
                 .weight(1f)
                 .padding(start = 8.dp)
+                .clickable { showOptions = !showOptions }
         ) {
             Text(
                 text = task.title,
@@ -447,279 +501,43 @@ fun TaskItem(
                     )
                 }
             }
-        }
-    }
-}
 
-// Helper function to format date
-private fun formatDate(timestamp: Long): String {
-    val dateFormat = java.text.SimpleDateFormat("MMM dd, yyyy", java.util.Locale.getDefault())
-    return dateFormat.format(java.util.Date(timestamp))
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun EditPhaseDialog(
-    phase: Phase,
-    onDismiss: () -> Unit,
-    onSave: (Phase) -> Unit,
-    onDelete: (String) -> Unit
-) {
-    var name by remember { mutableStateOf(phase.name) }
-    var description by remember { mutableStateOf(phase.description) }
-    var status by remember { mutableStateOf(phase.status) }
-    var nameError by remember { mutableStateOf(false) }
-    var showDeleteConfirmation by remember { mutableStateOf(false) }
-
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.large
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp)
-            ) {
-                Text(
-                    text = "Edit Phase",
-                    style = MaterialTheme.typography.titleLarge
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it; nameError = false },
-                    label = { Text("Phase Name*") },
-                    isError = nameError,
-                    supportingText = if (nameError) { { Text("Name is required") } } else null,
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text("Description") },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 3
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Text(
-                    text = "Phase Status",
-                    style = MaterialTheme.typography.labelLarge
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
+            // Task options (edit/delete) that show when clicked
+            AnimatedVisibility(visible = showOptions) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    PhaseStatus.values().forEach { phaseStatus ->
-                        FilterChip(
-                            selected = status == phaseStatus,
-                            onClick = { status = phaseStatus },
-                            label = {
-                                Text(
-                                    text = when(phaseStatus) {
-                                        PhaseStatus.NOT_STARTED -> "Not Started"
-                                        PhaseStatus.IN_PROGRESS -> "In Progress"
-                                        PhaseStatus.COMPLETED -> "Completed"
-                                    }
-                                )
-                            },
-                            leadingIcon = {
-                                Box(
-                                    modifier = Modifier
-                                        .size(8.dp)
-                                        .clip(CircleShape)
-                                        .background(
-                                            when(phaseStatus) {
-                                                PhaseStatus.NOT_STARTED -> MaterialTheme.colorScheme.error
-                                                PhaseStatus.IN_PROGRESS -> MaterialTheme.colorScheme.primary
-                                                PhaseStatus.COMPLETED -> MaterialTheme.colorScheme.tertiary
-                                            }
-                                        )
-                                )
-                            }
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.End
                 ) {
                     TextButton(
-                        onClick = { showDeleteConfirmation = true },
+                        onClick = onEditTask,
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.colorScheme.primary
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "Edit Task",
+                            modifier = Modifier.size(ButtonDefaults.IconSize)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Edit")
+                    }
+
+                    TextButton(
+                        onClick = onDeleteTask,
                         colors = ButtonDefaults.textButtonColors(
                             contentColor = MaterialTheme.colorScheme.error
                         )
                     ) {
                         Icon(
                             imageVector = Icons.Default.Delete,
-                            contentDescription = null,
+                            contentDescription = "Delete Task",
                             modifier = Modifier.size(ButtonDefaults.IconSize)
                         )
-                        Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                        Text("Delete Phase")
-                    }
-
-                    Row {
-                        TextButton(onClick = onDismiss) {
-                            Text("Cancel")
-                        }
-
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        Button(
-                            onClick = {
-                                if (name.isBlank()) {
-                                    nameError = true
-                                    return@Button
-                                }
-
-                                val updatedPhase = phase.copy(
-                                    name = name.trim(),
-                                    description = description.trim(),
-                                    status = status
-                                )
-
-                                onSave(updatedPhase)
-                                onDismiss()
-                            }
-                        ) {
-                            Text("Save Changes")
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    if (showDeleteConfirmation) {
-        AlertDialog(
-            onDismissRequest = { showDeleteConfirmation = false },
-            title = { Text("Delete Phase?") },
-            text = { Text("Are you sure you want to delete this phase? All associated tasks will be deleted as well.") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        onDelete(phase.id)
-                        showDeleteConfirmation = false
-                        onDismiss()
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
-                    )
-                ) {
-                    Text("Delete Phase")
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { showDeleteConfirmation = false }
-                ) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun AddTaskDialog(
-    phaseId: String, // Required parameter
-    onDismiss: () -> Unit,
-    onAddTask: (Task) -> Unit
-) {
-    var title by remember { mutableStateOf("") }
-    var description by remember { mutableStateOf("") }
-    var dueDate by remember { mutableStateOf<Long?>(null) }
-    var titleError by remember { mutableStateOf(false) }
-
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.large
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp)
-            ) {
-                Text(
-                    text = "Add Task",
-                    style = MaterialTheme.typography.titleLarge
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it; titleError = false },
-                    label = { Text("Task Title*") },
-                    isError = titleError,
-                    supportingText = if (titleError) { { Text("Title is required") } } else null,
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text("Description") },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 3
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Due date picker would go here
-                // ...
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    TextButton(onClick = onDismiss) {
-                        Text("Cancel")
-                    }
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    Button(
-                        onClick = {
-                            if (title.isBlank()) {
-                                titleError = true
-                                return@Button
-                            }
-
-                            val newTask = Task(
-                                id = java.util.UUID.randomUUID().toString(),
-                                title = title.trim(),
-                                description = description.trim(),
-                                isCompleted = false,
-                                dueDate = dueDate,
-                                // We'd need to add a phaseId field to Task or handle association elsewhere
-                                // phaseId = phaseId,
-                                createdAt = System.currentTimeMillis()
-                            )
-
-                            onAddTask(newTask)
-                            onDismiss()
-                        }
-                    ) {
-                        Text("Add Task")
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Delete")
                     }
                 }
             }
@@ -727,17 +545,9 @@ fun AddTaskDialog(
     }
 }
 
-// Add this overloaded version to fix the compilation error
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun AddTaskDialog(
-    onDismiss: () -> Unit,
-    onAddTask: (Task) -> Unit
-) {
-    // Call the original function with a default empty string for phaseId
-    AddTaskDialog(
-        phaseId = "",
-        onDismiss = onDismiss,
-        onAddTask = onAddTask
-    )
+
+// Helper function to format date
+private fun formatDate(timestamp: Long): String {
+    val dateFormat = java.text.SimpleDateFormat("MMM dd, yyyy", java.util.Locale.getDefault())
+    return dateFormat.format(java.util.Date(timestamp))
 }

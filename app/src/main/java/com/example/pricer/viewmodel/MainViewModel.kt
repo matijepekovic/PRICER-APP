@@ -363,13 +363,84 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedProspectId = MutableStateFlow<String?>(null)
     private val _taskPhaseId = MutableStateFlow<String?>(null)
     val taskPhaseId: StateFlow<String?> = _taskPhaseId.asStateFlow()
+    fun showEditTaskDialog(taskId: String) {
+        val selectedProspect = _selectedProspectRecord.value
+        val task = selectedProspect?.tasks?.find { it.id == taskId }
 
-    private val _phaseToEdit = MutableStateFlow<Phase?>(null)
-    val phaseToEdit: StateFlow<Phase?> = _phaseToEdit.asStateFlow()
+        if (task != null) {
+            _taskToEdit.value = task
+            _currentDialog.value = DialogState.EDIT_TASK
+            Log.d(TAG, "Showing EDIT_TASK dialog for task: ${task.title}")
+        } else {
+            Log.e(TAG, "Cannot edit task: Task with ID $taskId not found")
+        }
+    }
+
+    fun deleteTask(prospectId: String, taskId: String) {
+        Log.d(TAG, "Deleting task $taskId from prospect $prospectId")
+
+        _prospectRecords.update { records ->
+            records.map { record ->
+                if (record.id == prospectId) {
+                    val updatedTasks = record.tasks.filter { it.id != taskId }
+                    record.copy(
+                        tasks = updatedTasks,
+                        dateUpdated = System.currentTimeMillis()
+                    )
+                } else {
+                    record
+                }
+            }
+        }
+
+        // Update selected prospect if needed
+        updateSelectedProspect(_prospectRecords.value.find { it.id == prospectId })
+
+        // Save changes
+        saveProspectRecords()
+
+        // Show confirmation
+        viewModelScope.launch {
+            _snackbarMessage.emit("Task deleted")
+        }
+    }
+
+    fun updateTask(prospectId: String, updatedTask: Task) {
+        Log.d(TAG, "Updating task ${updatedTask.id} in prospect $prospectId")
+
+        _prospectRecords.update { records ->
+            records.map { record ->
+                if (record.id == prospectId) {
+                    val updatedTasks = record.tasks.map { task ->
+                        if (task.id == updatedTask.id) updatedTask else task
+                    }
+                    record.copy(
+                        tasks = updatedTasks,
+                        dateUpdated = System.currentTimeMillis()
+                    )
+                } else {
+                    record
+                }
+            }
+        }
+
+        // Update selected prospect if needed
+        updateSelectedProspect(_prospectRecords.value.find { it.id == prospectId })
+
+        // Save changes
+        saveProspectRecords()
+
+        // Show confirmation
+        viewModelScope.launch {
+            _snackbarMessage.emit("Task updated")
+        }
+    }
+
     // =============================================
     // Notes State
     // =============================================
-
+    private val _phaseToEdit = MutableStateFlow<Phase?>(null)
+    val phaseToEdit: StateFlow<Phase?> = _phaseToEdit.asStateFlow()
     private val _importConfirmEvent = MutableSharedFlow<Catalog>()
     val importConfirmEvent: SharedFlow<Catalog> = _importConfirmEvent.asSharedFlow()
 
@@ -377,7 +448,62 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val nameConflictEvent: SharedFlow<Pair<Catalog, String>> = _nameConflictEvent.asSharedFlow()
     private val _noteToEdit = MutableStateFlow<Note?>(null)
     val noteToEdit: StateFlow<Note?> = _noteToEdit.asStateFlow()
+    fun addPhase(phase: Phase) {
+        _globalPhases.update { currentPhases ->
+            val maxOrder = if (currentPhases.isEmpty()) -1 else currentPhases.maxOf { it.order }
+            val phaseWithOrder = phase.copy(order = maxOrder + 1)
+            currentPhases + phaseWithOrder
+        }
+        savePhases()
+    }
 
+    fun updatePhase(phase: Phase) {
+        _globalPhases.update { currentPhases ->
+            currentPhases.map {
+                if (it.id == phase.id) phase else it
+            }
+        }
+        savePhases()
+    }
+
+    fun deletePhase(phaseId: String) {
+        _globalPhases.update { currentPhases ->
+            currentPhases.filter { it.id != phaseId }
+        }
+
+        // Also update the order of remaining phases
+        _globalPhases.update { currentPhases ->
+            currentPhases.mapIndexed { index, phase ->
+                phase.copy(order = index)
+            }
+        }
+
+        savePhases()
+    }
+
+    fun showManagePhasesDialog() {
+        _currentDialog.value = DialogState.MANAGE_PHASES
+        Log.d(TAG, "Showing MANAGE_PHASES dialog")
+    }
+
+    fun showAddPhaseDialog() {
+        _phaseToEdit.value = null
+        _currentDialog.value = DialogState.ADD_PHASE
+        Log.d(TAG, "Showing ADD_PHASE dialog")
+    }
+
+    fun showEditPhaseDialog(phase: Phase) {
+        _phaseToEdit.value = phase
+        _currentDialog.value = DialogState.EDIT_PHASE
+        Log.d(TAG, "Showing EDIT_PHASE dialog with phase: ${phase.name}")
+    }
+
+    fun showAddTaskDialog(phaseId: String) {
+        Log.d(TAG, "Setting task phase ID to: $phaseId")
+        _taskPhaseId.value = phaseId
+        _currentDialog.value = DialogState.ADD_TASK
+
+    }
     // =============================================
     // Derived State
     // =============================================
@@ -523,29 +649,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // Add methods for tasks
     fun addTask(prospectId: String, task: Task) {
-        _prospectRecords.update { records ->
-            records.map { record ->
-                if (record.id == prospectId) {
-                    val updatedTasks = record.tasks + task
-                    record.copy(
-                        tasks = updatedTasks,
-                        dateUpdated = System.currentTimeMillis()
-                    )
-                } else {
-                    record
-                }
-            }
-        }
-        saveProspectRecords()
-    }
+        Log.d(TAG, "Adding task '${task.title}' to prospect $prospectId with phaseId ${task.phaseId}")
 
-    fun updateTask(prospectId: String, task: Task) {
+        // Make a copy to ensure we're not modifying the original
+        val newTask = task.copy(id = UUID.randomUUID().toString())
         _prospectRecords.update { records ->
             records.map { record ->
                 if (record.id == prospectId) {
-                    val updatedTasks = record.tasks.map {
-                        if (it.id == task.id) task else it
-                    }
+                    val updatedTasks = record.tasks + newTask
                     record.copy(
                         tasks = updatedTasks,
                         dateUpdated = System.currentTimeMillis()
@@ -555,24 +666,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
-        saveProspectRecords()
-    }
 
-    fun deleteTask(prospectId: String, taskId: String) {
-        _prospectRecords.update { records ->
-            records.map { record ->
-                if (record.id == prospectId) {
-                    val updatedTasks = record.tasks.filter { it.id != taskId }
-                    record.copy(
-                        tasks = updatedTasks,
-                        dateUpdated = System.currentTimeMillis()
-                    )
-                } else {
-                    record
-                }
+        _selectedProspectRecord.update { currentRecord ->
+            if (currentRecord?.id == prospectId) {
+                val updatedTasks = currentRecord.tasks + newTask
+                currentRecord.copy(
+                    tasks = updatedTasks,
+                    dateUpdated = System.currentTimeMillis()
+                )
+            } else {
+                currentRecord
             }
         }
+
+        // Save changes to storage
         saveProspectRecords()
+
+        // Clear task phase ID after adding
+        _taskPhaseId.value = null
+
+        // Emit a snackbar message to confirm the task was added
+        viewModelScope.launch {
+            _snackbarMessage.emit("Task '${task.title}' added")
+        }
     }
 
     fun toggleTaskCompletion(prospectId: String, taskId: String) {
@@ -591,6 +707,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+
+        // Also update the selected prospect if it's the one being modified
+        _selectedProspectRecord.update { currentRecord ->
+            if (currentRecord?.id == prospectId) {
+                val updatedTasks = currentRecord.tasks.map {
+                    if (it.id == taskId) it.copy(isCompleted = !it.isCompleted) else it
+                }
+                currentRecord.copy(
+                    tasks = updatedTasks,
+                    dateUpdated = System.currentTimeMillis()
+                )
+            } else {
+                currentRecord
+            }
+        }
+
         saveProspectRecords()
     }
 
@@ -817,19 +949,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         saveProspectRecords()
     }
 
-    fun showAddTaskDialog(phaseId: String) {
-        // This would be implemented when you create that dialog
-        // For now, just log the request
-        Log.i(TAG, "Request to show add task dialog for phase $phaseId")
-        // You'll need to implement this dialog later
-    }
 
-    fun showEditPhaseDialog(phase: Phase) {
-        // This would be implemented when you create that dialog
-        // For now, just log the request
-        Log.i(TAG, "Request to show edit dialog for phase ${phase.name}")
-        // You'll need to implement this dialog later
-    }
     // Add a method to show the Subcontractors screen
     fun showSubcontractorsScreen() {
         _uiMode.value = UiMode.SUBCONTRACTORS

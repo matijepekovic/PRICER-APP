@@ -93,7 +93,11 @@ enum class DialogState {
     ADD_CUSTOM_ITEM,
     ADD_VOUCHER,
     MANAGE_PHASES,       // Add this new state
-    ASSIGN_SUBCONTRACTOR
+    ASSIGN_SUBCONTRACTOR,
+    ADD_PHASE,           // For adding a new phase
+    EDIT_PHASE,          // For editing an existing phase
+    ADD_TASK,
+    EDIT_TASK,
 }
 @Serializable
 enum class ProspectStatus { PROSPECT, CUSTOMER }
