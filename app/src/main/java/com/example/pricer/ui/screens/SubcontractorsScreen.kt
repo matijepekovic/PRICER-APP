@@ -20,8 +20,26 @@ import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.pricer.data.model.Subcontractor
 import com.example.pricer.viewmodel.MainViewModel
-import java.util.UUID
 
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import java.util.UUID
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SubcontractorsScreen(
@@ -247,6 +265,7 @@ fun SubcontractorCard(
     }
 }
 
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SubcontractorDialog(
@@ -255,6 +274,15 @@ fun SubcontractorDialog(
     onSave: (Subcontractor) -> Unit
 ) {
     val isEditing = subcontractor != null
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    // Create focus requesters for each field to handle keyboard navigation
+    val specialtyFocus = remember { FocusRequester() }
+    val contactNameFocus = remember { FocusRequester() }
+    val phoneFocus = remember { FocusRequester() }
+    val emailFocus = remember { FocusRequester() }
+    val notesFocus = remember { FocusRequester() }
 
     var name by remember { mutableStateOf(subcontractor?.name ?: "") }
     var specialty by remember { mutableStateOf(subcontractor?.specialty ?: "") }
@@ -265,15 +293,23 @@ fun SubcontractorDialog(
 
     var nameError by remember { mutableStateOf(false) }
 
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(
+        onDismissRequest = {
+            keyboardController?.hide()
+            onDismiss()
+        }
+    ) {
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 500.dp),
             shape = MaterialTheme.shapes.medium
         ) {
             Column(
                 modifier = Modifier
                     .padding(16.dp)
                     .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
             ) {
                 Text(
                     text = if (isEditing) "Edit Subcontractor" else "Add Subcontractor",
@@ -282,58 +318,139 @@ fun SubcontractorDialog(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
+                // Name field
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it; nameError = false },
                     label = { Text("Name*") },
                     isError = nameError,
                     supportingText = if (nameError) { { Text("Name is required") } } else null,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Words,
+                        imeAction = ImeAction.Next
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onNext = { specialtyFocus.requestFocus() }
+                    ),
+                    singleLine = true
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
 
+                // Specialty field
                 OutlinedTextField(
                     value = specialty,
                     onValueChange = { specialty = it },
                     label = { Text("Specialty") },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(specialtyFocus),
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Words,
+                        imeAction = ImeAction.Next
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onNext = { contactNameFocus.requestFocus() }
+                    ),
+                    singleLine = true
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
 
+                // Contact Name field
                 OutlinedTextField(
                     value = contactName,
                     onValueChange = { contactName = it },
                     label = { Text("Contact Name") },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(contactNameFocus),
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Words,
+                        imeAction = ImeAction.Next
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onNext = { phoneFocus.requestFocus() }
+                    ),
+                    singleLine = true
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
 
+                // Phone field
                 OutlinedTextField(
                     value = phone,
                     onValueChange = { phone = it },
                     label = { Text("Phone") },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(phoneFocus),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Phone,
+                        imeAction = ImeAction.Next
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onNext = { emailFocus.requestFocus() }
+                    ),
+                    singleLine = true
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
 
+                // Email field
                 OutlinedTextField(
                     value = email,
                     onValueChange = { email = it },
                     label = { Text("Email") },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(emailFocus),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Email,
+                        imeAction = ImeAction.Next
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onNext = { notesFocus.requestFocus() }
+                    ),
+                    singleLine = true
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
 
+                // Notes field
                 OutlinedTextField(
                     value = notes,
                     onValueChange = { notes = it },
                     label = { Text("Notes") },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(notesFocus)
+                        .heightIn(min = 100.dp),
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Sentences,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onDone = {
+                            keyboardController?.hide()
+                            // Optional: automatically submit if all required fields are filled
+                            if (name.isNotBlank()) {
+                                val newSubcontractor = Subcontractor(
+                                    id = subcontractor?.id ?: UUID.randomUUID().toString(),
+                                    name = name.trim(),
+                                    specialty = specialty.trim(),
+                                    contactName = contactName.trim(),
+                                    phone = phone.trim(),
+                                    email = email.trim(),
+                                    notes = notes.trim()
+                                )
+                                onSave(newSubcontractor)
+                            } else {
+                                nameError = true
+                            }
+                        }
+                    ),
                     minLines = 3
                 )
 
@@ -343,7 +460,12 @@ fun SubcontractorDialog(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End
                 ) {
-                    TextButton(onClick = onDismiss) {
+                    TextButton(
+                        onClick = {
+                            keyboardController?.hide()
+                            onDismiss()
+                        }
+                    ) {
                         Text("Cancel")
                     }
 
@@ -351,6 +473,7 @@ fun SubcontractorDialog(
 
                     Button(
                         onClick = {
+                            keyboardController?.hide()
                             if (name.isBlank()) {
                                 nameError = true
                                 return@Button

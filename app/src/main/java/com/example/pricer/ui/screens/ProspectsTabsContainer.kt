@@ -16,7 +16,7 @@ import androidx.compose.ui.Modifier
 import com.example.pricer.viewmodel.MainViewModel
 
 /**
- * Container that manages tab navigation between ProspectsScreen and CustomersScreen
+ * Container that manages tab navigation between ProspectsScreen, CustomersScreen, and SubcontractorsScreen
  */
 @Composable
 fun ProspectsTabsContainer(
@@ -25,7 +25,7 @@ fun ProspectsTabsContainer(
     onRecordClick: (String) -> Unit,
     initialTab: Int = 0
 ) {
-    var selectedTabIndex by remember { mutableIntStateOf(initialTab.coerceIn(0, 1)) }
+    var selectedTabIndex by remember { mutableIntStateOf(initialTab.coerceIn(0, 2)) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         // Tab Row
@@ -43,6 +43,11 @@ fun ProspectsTabsContainer(
                 onClick = { selectedTabIndex = 1 },
                 text = { Text("Customers") }
             )
+            Tab(
+                selected = selectedTabIndex == 2,
+                onClick = { selectedTabIndex = 2 },
+                text = { Text("Contractors") }
+            )
         }
 
         // Content based on selected tab
@@ -59,6 +64,12 @@ fun ProspectsTabsContainer(
                     viewModel = viewModel,
                     onNavigateBackToCatalog = onNavigateBackToCatalog,
                     onCustomerClick = onRecordClick
+                )
+            }
+            2 -> {
+                SubcontractorsScreen(
+                    viewModel = viewModel,
+                    onNavigateBack = onNavigateBackToCatalog
                 )
             }
         }

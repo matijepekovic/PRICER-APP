@@ -38,12 +38,15 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.pricer.data.model.*
+import com.example.pricer.ui.components.PhaseViewer
 import com.example.pricer.viewmodel.MainViewModel
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.*
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -75,30 +78,7 @@ fun ProspectDetailScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
-                actions = {
-                    IconButton(onClick = { viewModel.showSubcontractorsScreen() }) {
-                        Icon(Icons.Default.Person, contentDescription = "Manage Subcontractors")
-                    }
-                    selectedProspect?.let { prospect ->
-                        if (!prospect.externalPdfUriString.isNullOrBlank()) {
-                            IconButton(onClick = {
-                                try {
-                                    val pdfUri = Uri.parse(prospect.externalPdfUriString)
-                                    val intent = Intent(Intent.ACTION_VIEW).apply {
-                                        setDataAndType(pdfUri, "application/pdf")
-                                        flags = Intent.FLAG_ACTIVITY_CLEAR_TOP
-                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                    }
-                                    context.startActivity(intent)
-                                } catch (e: Exception) {
-                                    Toast.makeText(context, "Could not open PDF", Toast.LENGTH_SHORT).show()
-                                }
-                            }) {
-                                Icon(Icons.Default.Share, contentDescription = "Share PDF")
-                            }
-                        }
-                    }
-                }
+                actions = { /* Empty actions section - removed buttons */ }
             )
         }
     ) { paddingValues ->
@@ -307,6 +287,9 @@ fun ProspectDetailScreen(
                 // --- Project Phases Section ---
                 SectionTitle("Project Phases")
 
+                val coroutineScope = rememberCoroutineScope()
+                val pagerState = rememberPagerState(initialPage = selectedPhaseIndex, pageCount = { globalPhases.size })
+
                 if (globalPhases.isEmpty()) {
                     Text(
                         text = "No phases defined yet. Add phases in the management screen.",
@@ -325,58 +308,30 @@ fun ProspectDetailScreen(
                         Text("Manage Phases")
                     }
                 } else {
-                    // Simple phase display (not the full pager yet)
-                    Column {
-                        globalPhases.forEach { phase ->
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp)
-                            ) {
-                                Column(modifier = Modifier.padding(16.dp)) {
-                                    Text(
-                                        text = phase.name,
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold
-                                    )
-
-                                    if (phase.description.isNotBlank()) {
-                                        Text(
-                                            text = phase.description,
-                                            style = MaterialTheme.typography.bodySmall
-                                        )
-                                    }
-
-                                    Spacer(modifier = Modifier.height(4.dp))
-
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text("Status: ")
-
-                                        Card(
-                                            colors = CardDefaults.cardColors(
-                                                containerColor = when(phase.status) {
-                                                    PhaseStatus.NOT_STARTED -> MaterialTheme.colorScheme.errorContainer
-                                                    PhaseStatus.IN_PROGRESS -> MaterialTheme.colorScheme.primaryContainer
-                                                    PhaseStatus.COMPLETED -> MaterialTheme.colorScheme.tertiaryContainer
-                                                }
-                                            ),
-                                            modifier = Modifier.padding(4.dp)
-                                        ) {
-                                            Text(
-                                                text = when(phase.status) {
-                                                    PhaseStatus.NOT_STARTED -> "Not Started"
-                                                    PhaseStatus.IN_PROGRESS -> "In Progress"
-                                                    PhaseStatus.COMPLETED -> "Completed"
-                                                },
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                                style = MaterialTheme.typography.bodySmall
-                                            )
-                                        }
-                                    }
-                                }
-                            }
+                    // Use the new PhaseViewer component
+                    PhaseViewer(
+                        phases = globalPhases,
+                        tasks = prospect.tasks,
+                        currentPhaseIndex = selectedPhaseIndex,
+                        onPhaseSwipe = { newIndex ->
+                            viewModel.setSelectedPhaseIndex(newIndex)
+                        },
+                        onTogglePhaseStatus = { phaseId, newStatus ->
+                            // Add this method to your MainViewModel
+                            viewModel.updatePhaseStatus(prospect.id, phaseId, newStatus)
+                        },
+                        onAddTask = { phaseId ->
+                            // Add this method to your MainViewModel
+                            viewModel.showAddTaskDialog(phaseId)
+                        },
+                        onTaskStatusChange = { taskId, isCompleted ->
+                            viewModel.toggleTaskCompletion(prospect.id, taskId)
+                        },
+                        onEditPhase = { phase ->
+                            // Add this method to your MainViewModel
+                            viewModel.showEditPhaseDialog(phase)
                         }
-                    }
+                    )
 
                     Spacer(modifier = Modifier.height(8.dp))
 

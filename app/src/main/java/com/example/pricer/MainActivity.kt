@@ -49,7 +49,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.serialization.decodeFromString
 import com.example.pricer.data.model.Catalog
 import com.example.pricer.ui.screens.SubcontractorsScreen
-import com.example.pricer.ui.dialogs.ManagePhasesDialog
+
 import com.example.pricer.ui.dialogs.AssignSubcontractorDialog
 
 // Lifecycle imports
@@ -869,11 +869,7 @@ class MainActivity : ComponentActivity() {
             DialogState.MANAGE_PHASES -> {
                 val phases by viewModel.globalPhases.collectAsStateWithLifecycle()
 
-                ManagePhasesDialog(
-                    phases = phases,
-                    onDismiss = { viewModel.dismissDialog() },
-                    onSave = { viewModel.saveGlobalPhases(it) }
-                )
+
             }
 
             DialogState.ASSIGN_SUBCONTRACTOR -> {

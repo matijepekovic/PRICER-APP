@@ -361,7 +361,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedProspectRecord = MutableStateFlow<ProspectRecord?>(null)
     val selectedProspectRecord: StateFlow<ProspectRecord?> = _selectedProspectRecord.asStateFlow()
     private val _selectedProspectId = MutableStateFlow<String?>(null)
+    private val _taskPhaseId = MutableStateFlow<String?>(null)
+    val taskPhaseId: StateFlow<String?> = _taskPhaseId.asStateFlow()
 
+    private val _phaseToEdit = MutableStateFlow<Phase?>(null)
+    val phaseToEdit: StateFlow<Phase?> = _phaseToEdit.asStateFlow()
     // =============================================
     // Notes State
     // =============================================
@@ -794,7 +798,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+    fun updatePhaseStatus(prospectId: String, phaseId: String, newStatus: PhaseStatus) {
+        _prospectRecords.update { records ->
+            records.map { record ->
+                if (record.id == prospectId) {
+                    val updatedPhases = record.phases.map { phase ->
+                        if (phase.id == phaseId) phase.copy(status = newStatus) else phase
+                    }
+                    record.copy(
+                        phases = updatedPhases,
+                        dateUpdated = System.currentTimeMillis()
+                    )
+                } else {
+                    record
+                }
+            }
+        }
+        saveProspectRecords()
+    }
 
+    fun showAddTaskDialog(phaseId: String) {
+        // This would be implemented when you create that dialog
+        // For now, just log the request
+        Log.i(TAG, "Request to show add task dialog for phase $phaseId")
+        // You'll need to implement this dialog later
+    }
+
+    fun showEditPhaseDialog(phase: Phase) {
+        // This would be implemented when you create that dialog
+        // For now, just log the request
+        Log.i(TAG, "Request to show edit dialog for phase ${phase.name}")
+        // You'll need to implement this dialog later
+    }
     // Add a method to show the Subcontractors screen
     fun showSubcontractorsScreen() {
         _uiMode.value = UiMode.SUBCONTRACTORS

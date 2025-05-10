@@ -162,9 +162,9 @@ data class Task(
     val description: String = "",
     var isCompleted: Boolean = false,
     val dueDate: Long? = null,
+    val phaseId: String = "", // Add this line if it doesn't exist
     val createdAt: Long = System.currentTimeMillis()
 )
-
 @Serializable
 data class PhaseImage(
     val phaseId: String,
